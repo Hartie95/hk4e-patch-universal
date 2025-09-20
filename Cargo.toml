@@ -23,6 +23,7 @@ windows = { version = "0.54.0", features = [
 ] }
 winapi = { version = "0.3",features = ["winnt","libloaderapi","memoryapi","winuser"]}
 clap = { version = "4.5.48", features = ["derive", "env"] }
+url = "2.5.7"
 
 [build-dependencies]
 cc = "1.0.90"

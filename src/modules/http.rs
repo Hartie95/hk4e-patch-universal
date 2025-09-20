@@ -10,6 +10,7 @@ const WEB_REQUEST_UTILS_MAKE_INITIAL_URL: &str = "55 41 56 56 57 53 48 81 EC ?? 
 const BROWSER_LOAD_URL: &str = "41 B0 01 E9 08 00 00 00 0F 1F 84 00 00 00 00 00 56 57";
 const BROWSER_LOAD_URL_OFFSET: usize = 0x10;
 
+use crate::config::{ENDPOINTS};
 pub struct Http;
 
 impl MhyModule for MhyContext<Http> {
@@ -55,6 +56,9 @@ impl MhyModule for MhyContext<Http> {
 }
 
 unsafe extern "win64" fn on_make_initial_url(reg: *mut Registers, _: usize) {
+    if ENDPOINTS.dispatch.is_none() && ENDPOINTS.sdk.is_none() {
+        return;
+    }
     let str_length = *((*reg).rcx.wrapping_add(16) as *const u32);
     let str_ptr = (*reg).rcx.wrapping_add(20) as *const u8;
 
@@ -62,9 +66,17 @@ unsafe extern "win64" fn on_make_initial_url(reg: *mut Registers, _: usize) {
     let url = String::from_utf16le(slice).unwrap();
 
     let mut new_url = if url.contains("/query_region_list") {
-        String::from("http://127.0.0.1:21041")
+        if let Some(dispatch) = &ENDPOINTS.dispatch {
+            dispatch.to_string()
+        } else{
+            return;
+        }
     } else {
-        String::from("http://127.0.0.1:21000")
+        if let Some(sdk) = &ENDPOINTS.sdk {
+            sdk.to_string()
+        } else{
+            return;
+        }
     };
 
     url.split('/').skip(3).for_each(|s| {
@@ -80,13 +92,16 @@ unsafe extern "win64" fn on_make_initial_url(reg: *mut Registers, _: usize) {
 }
 
 unsafe extern "win64" fn on_browser_load_url(reg: *mut Registers, _: usize) {
+    if ENDPOINTS.sdk.is_none() {
+        return;
+    }
     let str_length = *((*reg).rdx.wrapping_add(16) as *const u32);
     let str_ptr = (*reg).rdx.wrapping_add(20) as *const u8;
 
     let slice = std::slice::from_raw_parts(str_ptr, (str_length * 2) as usize);
     let url = String::from_utf16le(slice).unwrap();
 
-    let mut new_url = String::from("http://127.0.0.1:21000");
+    let mut new_url = String::from(&ENDPOINTS.sdk.as_ref().unwrap().to_string());
     url.split('/').skip(3).for_each(|s| {
         new_url.push_str("/");
         new_url.push_str(s);

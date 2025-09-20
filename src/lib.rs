@@ -9,13 +9,35 @@ use windows::Win32::System::SystemServices::DLL_PROCESS_ATTACH;
 use windows::Win32::{Foundation::HINSTANCE, System::LibraryLoader::GetModuleFileNameA};
 use std::ffi::CStr;
 use std::path::Path;
+use clap::Parser;
+use config::{ENDPOINTS};
 
 mod interceptor;
 mod marshal;
 mod modules;
 mod util;
+mod config;
 
 use crate::modules::{Http, MhyContext, ModuleManager, Security};
+
+#[derive(Parser, Debug)]
+#[command(author, version, about)]
+struct Cli {
+    /// Redirects *all* targets (acts as default/base).
+    /// Env: REDIRECT
+    #[arg(long, env = "REDIRECT")]
+    redirect: Option<String>,
+
+    /// Redirects only the dispatch target (overrides --redirect for dispatch).
+    /// Env: DISPATCH_URL
+    #[arg(long, env = "DISPATCH_URL")]
+    dispatch: Option<String>,
+
+    /// Redirects only SDK/“other” targets (overrides --redirect for sdk).
+    /// Env: SDK_URL
+    #[arg(long, env = "SDK_URL")]
+    sdk: Option<String>,
+}
 
 unsafe fn thread_func() {
     let mut module_manager = MODULE_MANAGER.write().unwrap();
@@ -37,6 +59,21 @@ unsafe fn thread_func() {
     if exe_name != "GenshinImpact.exe" && exe_name != "YuanShen.exe" {
         println!("Executable is not Genshin. Skipping initialization.");
         return;
+    }
+
+    let cli = Cli::parse();
+    if let Some(redirect) = cli.redirect {
+        println!("Setting up redirect: {}", redirect);
+        ENDPOINTS.dispatch = Some(redirect.to_string());
+        ENDPOINTS.sdk = Some(redirect.to_string());
+    }
+    if let Some(dispatch) = cli.dispatch {
+        println!("Setting up dispatch redirect: {}", dispatch);
+        ENDPOINTS.dispatch = Some(dispatch);
+    }
+    if let Some(sdk) = cli.sdk {
+        println!("Setting up sdk redirect: {}", sdk);
+        ENDPOINTS.sdk = Some(sdk);
     }
 
     println!("Initializing modules...");

@@ -4,7 +4,7 @@ use crate::util;
 use windows::Win32::{System::LibraryLoader::GetModuleFileNameA};
 use std::path::Path;
 
-const PTR_TO_STRING_ANSI: &str = "0F 1F 80 00 00 00 00 E9 ?? ?? ?? ?? 66 66 2E 0F 1F 84 00 00 00 00 00 56 48 83 EC 20 48 85 C9";
+const PTR_TO_STRING_ANSI: &str = "0F 1F 80 00 00 00 00 E9 ?? ?? ?? ?? 66 66 2E 0F 1F 84 00 00 00 00 00 56 48 83 EC 20 48 85 C9 74 17 48";
 const PTR_TO_STRING_ANSI_OFFSET: usize = 0x17;
 type MarshalPtrToStringAnsi = unsafe extern "fastcall" fn(*const u8) -> *const u8;
 static mut PTR_TO_STRING_ANSI_ADDR: Option<usize> = None;

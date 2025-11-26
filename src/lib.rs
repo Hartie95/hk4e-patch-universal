@@ -19,7 +19,7 @@ mod modules;
 mod util;
 mod config;
 
-use crate::modules::{Http, MhyContext, ModuleManager, Security};
+use crate::modules::{Http, MhyContext, ModuleManager, Security, HoYoPass};
 
 fn parse_http_url(input: &str) -> Result<Url, String> {
     let mut u = Url::parse(input)
@@ -63,7 +63,7 @@ unsafe fn thread_func() {
     let mut module_manager = MODULE_MANAGER.write().unwrap();
 
     // Block query_security_file ASAP
-    module_manager.enable(MhyContext::<CcpBlocker>::new(""));
+    let _ = module_manager.enable(MhyContext::<CcpBlocker>::new(""));
 
     util::disable_memprotect_guard();
     Console::AllocConsole().unwrap();
@@ -98,10 +98,16 @@ unsafe fn thread_func() {
 
     println!("Initializing modules...");
 
-    module_manager.enable(MhyContext::<Security>::new(&exe_name));
+    let _ = module_manager.enable(MhyContext::<Security>::new(&exe_name));
+
+    if let Err(e) = module_manager.enable(MhyContext::<HoYoPass>::new(&exe_name)){
+        println!("Error initializing hoyopass, if on 6.0+ this causes login problems: {}", e)
+    };
     marshal::find();
-    module_manager.enable(MhyContext::<Http>::new(&exe_name));
-    module_manager.enable(MhyContext::<Misc>::new(&exe_name));
+    if let Err(e) = module_manager.enable(MhyContext::<Http>::new(&exe_name)){
+        println!("Error initializing https module, automatic redirects will not work, use a proxy instead: {}", e)
+    };
+    let _ = module_manager.enable(MhyContext::<Misc>::new(&exe_name));
 
     println!("Successfully initialized!");
 }

@@ -5,11 +5,13 @@ use anyhow::Result;
 use crate::interceptor::Interceptor;
 
 mod ccp_blocker;
+mod hoyopass;
 mod http;
 mod misc;
 mod security;
 
 pub use ccp_blocker::CcpBlocker;
+pub use hoyopass::HoYoPass;
 pub use http::Http;
 pub use misc::Misc;
 pub use security::Security;
@@ -22,11 +24,16 @@ unsafe impl Sync for ModuleManager {}
 unsafe impl Send for ModuleManager {}
 
 impl ModuleManager {
-    pub unsafe fn enable(&mut self, module: impl MhyModule + 'static) {
+    pub unsafe fn enable(&mut self, module: impl MhyModule + 'static) -> Result<()> {
         let mut boxed_module = Box::new(module);
-        boxed_module.init().unwrap();
+        let init_result = boxed_module.init();
+        if init_result.is_err() {
+            return init_result
+        }
+
         self.modules
             .insert(boxed_module.get_module_type(), boxed_module);
+        Ok(())
     }
 
     #[allow(dead_code)]
@@ -44,6 +51,7 @@ pub enum ModuleType {
     Security,
     Misc,
     CcpBlocker,
+    HoYoPass,
 }
 
 pub trait MhyModule {

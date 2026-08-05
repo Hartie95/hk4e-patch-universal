@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [lib]
-name = "ext"
+name = "winhttp"
 crate-type = ["cdylib"]
 
 [dependencies]
@@ -20,6 +20,10 @@ windows = { version = "0.54.0", features = [
 	"Win32_System_Console",
 	"Win32_System_Threading",
 	"Win32_System_Memory",
+	"Win32_System_SystemInformation",
+	"Win32_System_Diagnostics_Debug",
+	"Win32_Networking_WinHttp",
+	"Win32_Storage_FileSystem"
 ] }
 winapi = { version = "0.3",features = ["winnt","libloaderapi","memoryapi","winuser"]}
 clap = { version = "4.5.48", features = ["derive", "env"] }

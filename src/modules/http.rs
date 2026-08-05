@@ -6,9 +6,20 @@ use anyhow::Result;
 use ilhook::x64::Registers;
 use crate::util;
 
-const WEB_REQUEST_UTILS_MAKE_INITIAL_URL: &str = "55 41 56 56 57 53 48 81 EC ?? ?? ?? ?? 48 8D AC 24 ?? ?? ?? ?? 48 C7 45 ?? ?? ?? ?? ?? 48 89 D6 48 89 CF 48 8B 0D ?? ?? ?? ??";
-const BROWSER_LOAD_URL: &str = "41 B0 01 E9 08 00 00 00 0F 1F 84 00 00 00 00 00 56 57";
-const BROWSER_LOAD_URL_OFFSET: usize = 0x10;
+//const WEB_REQUEST_UTILS_MAKE_INITIAL_URL: &str = "4C ? ? FA CC E8 46 ? ? FA CC E8 40 ? ? FA CC E8 3A ? ? FA CC E8 34 ? ? FA CC E8 2E ? ? FA CC E8 28 ? ? FA CC CC CC CC CC CC CC CC 48 89";
+const WEB_REQUEST_UTILS_MAKE_INITIAL_URL: &str = "48 89 4C 24 08 55 53 56 57 41 56 48 83 EC 60 48 8D 6C 24 20 48 C7 45 20 FE FF FF FF 48 8B DA 48 8B F9 8B 04 24 48 83 EC 10 8B 04 24 40 32 F6 40";
+//const WEB_REQUEST_UTILS_MAKE_INITIAL_URL: &str = "48 89 4C 24 08 55 53 56 57 41 56 48 83 EC ?? 48 8D 6C 24 20 48 C7 45 00 FE FF FF FF 48 8B";
+//4C ? ? FA CC E8 46 ? ? FA CC E8 40 ? ? FA CC E8 3A ? ? FA CC E8 34 ? ? FA CC E8 2E ? ? FA CC E8 28 ? ? FA CC CC CC CC CC CC CC CC | 48 89 4C 24 08 55 53 56 57 41 56 48 83 EC 60 48 8D 6C 24 20 48 C7 45 20 FE FF FF FF 48 8B DA 48 8B F9 8B 04 24 48 83 EC 10 8B 04 24 40 32 F6 40
+//4C ? ? FA CC E8 46 ? ? FA CC E8 40 ? ? FA CC E8 3A ? ? FA CC E8 34 ? ? FA CC E8 2E ? ? FA CC E8 28 ? ? FA CC CC CC CC CC CC CC CC | 48 89 4C 24 08 55 53 56 57 41 56 48 83 EC 60 48 8D 6C 24 20 48 C7 45 20 FE FF FF FF 48 8B DA 48 8B F9 8B 04 24 48 83 EC 10 8B 04 24 40 32 F6 40
+//                                                                                                                                  | 48 89 4C 24 08 55 53 56 57 41 56 48 83 EC ?? 48 8D 6C 24 20 48 C7 45 00 FE FF FF FF 48 8B D9 33
+// 48894C240855535657415648
+const BROWSER_LOAD_URL: &str = "48 89 5C 24 08 57 48 83 EC 20 48 8B F9 33 D2 48 8B 0D BA 5A 61 04 E8 25 88 0F 00 48 8B D8 48 85 C0 74 25 45 33 C0 48 8B D7 48 8B C8 E8 CF 89 0F";
+//const BROWSER_LOAD_URL: &str = "41 B0 01 E9 08 00 00 00 0F 1F 84 00 00 00 00 00 56 57";
+
+// D6 E8 8A 2F 00 00 EB DE E8 33 F2 04 FB CC E8 2D F2 04 FB CC E8 27 F2 04 FB CC CC CC CC CC CC CC | 48 89 5C 24 08 48 89 6C 24 10 48 89 74 24 18 57 48 83 EC 30 48 8B F9 41 0F B6 E8 48 8B 0D 3E 29 2D 04 48 8B F2 E8 B6 F1 04 FB 33 D2 48 8B C8 48
+// 48 8B 49 08 45 33 C0 BA D1 A6 00 00 48 8B 09 E9 2C 7E 24 06 CC CC CC CC CC CC CC CC CC CC CC CC | 48 8B 49 08 45 33 C0 BA C1 3D 00 00 48 8B 09 E9 0C 7E 24 06 CC CC CC CC CC CC CC CC CC CC CC CC 48 8B 49 08 45 33 C0 BA 32 41 00 00 48 8B 09 E9
+const BROWSER_LOAD_URL_OFFSET: usize = 0x0;
+//const BROWSER_LOAD_URL_OFFSET: usize = 0x10;
 
 use crate::config::{ENDPOINTS};
 pub struct Http;
@@ -29,7 +40,8 @@ impl MhyModule for MhyContext<Http> {
             println!("Failed to find web_request_utils_make_initial_url");
         }
 
-        let browser_load_url = util::pattern_scan_il2cpp(self.assembly_name, BROWSER_LOAD_URL);
+        // todo find good pattern
+        /*let browser_load_url = util::pattern_scan_il2cpp(self.assembly_name, BROWSER_LOAD_URL);
         if let Some(addr) = browser_load_url {
             let addr_offset = addr as usize + BROWSER_LOAD_URL_OFFSET;
             println!("browser_load_url: {:x}", addr_offset);
@@ -41,8 +53,8 @@ impl MhyModule for MhyContext<Http> {
         else
         {
             println!("Failed to find browser_load_url");
-        }
-        
+        }*/
+
         Ok(())
     }
 
@@ -64,6 +76,11 @@ unsafe extern "win64" fn on_make_initial_url(reg: *mut Registers, _: usize) {
 
     let slice = std::slice::from_raw_parts(str_ptr, (str_length * 2) as usize);
     let url = String::from_utf16le(slice).unwrap();
+    println!("requested url: {url} ");
+
+    if url.starts_with("file://") {
+        return;
+    }
 
     let mut new_url = if url.contains("/query_region_list") {
         if let Some(dispatch) = &ENDPOINTS.dispatch {

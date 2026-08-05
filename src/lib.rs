@@ -1,6 +1,6 @@
 #![feature(str_from_utf16_endian)]
 
-use std::{sync::RwLock};
+use std::{sync::RwLock, thread};
 
 use lazy_static::lazy_static;
 use modules::{CcpBlocker, Misc};
@@ -9,9 +9,14 @@ use windows::Win32::System::SystemServices::DLL_PROCESS_ATTACH;
 use windows::Win32::{Foundation::HINSTANCE, System::LibraryLoader::GetModuleFileNameA};
 use std::ffi::CStr;
 use std::path::Path;
+use std::thread::sleep;
+use std::time::Duration;
 use clap::Parser;
 use url::Url;
+use windows::core::s;
+use windows::Win32::System::LibraryLoader::GetModuleHandleA;
 use config::{ENDPOINTS};
+use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
 
 mod interceptor;
 mod marshal;
@@ -58,15 +63,22 @@ struct Cli {
     #[arg(long, env = "SDK_URL", value_parser = parse_http_url)]
     sdk: Option<Url>,
 }
+const UA_DLL_NAME: &str = "UserAssembly.dll";
+
+unsafe fn initConsole(){
+    Console::AllocConsole().unwrap();
+    println!("Genshin Impact encryption patch\nMade by xeondev\nmodded by hartie95 for chainload");
+}
 
 unsafe fn thread_func() {
+
     let mut module_manager = MODULE_MANAGER.write().unwrap();
 
     // Block query_security_file ASAP
     let _ = module_manager.enable(MhyContext::<CcpBlocker>::new(""));
 
-    util::disable_memprotect_guard();
-    Console::AllocConsole().unwrap();
+    // todo only skip if mhynot2 is loaded
+    //util::disable_memprotect_guard();
 
     println!("Genshin Impact encryption patch\nMade by xeondev\n(Modded for all version > 5.0)");
 
@@ -81,32 +93,46 @@ unsafe fn thread_func() {
         return;
     }
 
+    let mut usesRedirect = false;
+
     let cli = Cli::parse();
     if let Some(redirect) = cli.redirect {
         println!("Setting up redirect: {}", redirect);
         ENDPOINTS.dispatch = Some(redirect.origin().unicode_serialization());
         ENDPOINTS.sdk = Some(redirect.origin().unicode_serialization());
+        usesRedirect = true;
     }
     if let Some(dispatch) = cli.dispatch {
         println!("Setting up dispatch redirect: {}", dispatch);
         ENDPOINTS.dispatch = Some(dispatch.origin().unicode_serialization());
+        usesRedirect = true;
     }
     if let Some(sdk) = cli.sdk {
         println!("Setting up sdk redirect: {}", sdk);
         ENDPOINTS.sdk = Some(sdk.origin().unicode_serialization());
+        usesRedirect = true;
     }
 
     println!("Initializing modules...");
-
-    let _ = module_manager.enable(MhyContext::<Security>::new(&exe_name));
-
     if let Err(e) = module_manager.enable(MhyContext::<HoYoPass>::new(&exe_name)){
         println!("Error initializing hoyopass, if on 6.0+ this causes login problems: {}", e)
     };
+
+    println!("Waiting for ua");
+    while !is_user_assembly_loaded() {
+        thread::sleep(Duration::from_millis(10));
+    }
+    sleep(Duration::from_secs(2));
+
+    let _ = module_manager.enable(MhyContext::<Security>::new(UA_DLL_NAME));
+
     marshal::find();
-    if let Err(e) = module_manager.enable(MhyContext::<Http>::new(&exe_name)){
-        println!("Error initializing https module, automatic redirects will not work, use a proxy instead: {}", e)
-    };
+
+    if usesRedirect {
+        if let Err(e) = module_manager.enable(MhyContext::<Http>::new(UA_DLL_NAME)){
+            println!("Error initializing https module, automatic redirects will not work, use a proxy instead: {}", e)
+        };
+    }
     let _ = module_manager.enable(MhyContext::<Misc>::new(&exe_name));
 
     println!("Successfully initialized!");
@@ -115,11 +141,22 @@ unsafe fn thread_func() {
 lazy_static! {
     static ref MODULE_MANAGER: RwLock<ModuleManager> = RwLock::new(ModuleManager::default());
 }
+fn is_user_assembly_loaded() -> bool {
+    unsafe { GetModuleHandleA(s!("UserAssembly.dll")).is_ok() }
+}
+
+// todo check if mhynot2.dll exists, otherwise don't try to load
+unsafe fn loadMhypnot(){
+    let libwinpthread = LoadLibraryW(&windows::core::HSTRING::from("libwinpthread-1.dll")).unwrap();
+    let mhypnot = LoadLibraryW(&windows::core::HSTRING::from("mhynot2.dll")).unwrap();
+}
 
 #[no_mangle]
 #[allow(non_snake_case)]
 unsafe extern "system" fn DllMain(_: HINSTANCE, call_reason: u32, _: *mut ()) -> bool {
     if call_reason == DLL_PROCESS_ATTACH {
+        initConsole();
+        loadMhypnot();
         #[cfg(debug_assertions)]
         {
             thread_func();

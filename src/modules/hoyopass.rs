@@ -3,74 +3,27 @@ use anyhow::Result;
 use ilhook::x64::Registers;
 use crate::util;
 use std::sync::atomic::{AtomicUsize, AtomicBool, Ordering};
+use std::sync::OnceLock;
+use windows::core::s;
+use windows::Win32::Networking::WinHttp::WINHTTP_FLAG_SECURE;
+use windows::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
+use crate::config::ENDPOINTS;
 
 pub struct HoYoPass;
-
-const LOGIN_MANAGER_INITIALIZE: &str = "56 57 53 48 83 EC ?? 48 89 CE 80 3D ?? ?? ?? ?? 00 0F 84 ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 89 C7 48";
-
-const HOYOPASS_SDK_INITIALIZE: &str = "55 56 57 48 83 EC ?? 48 8D 6C 24 ?? 48 C7 45 ?? ?? ?? ?? ?? 48 89 CE 80 3D ?? ?? ?? ?? ?? 0F 84 ?? ?? ?? ?? 48 8B 0D ?? ?? ?? ?? 80 B9 ?? ?? ?? ?? ?? 0F 84 ?? ?? ?? ?? 48 89 F1 E8 ?? ?? ?? ?? 48 89 C6";
-
-const HOYOPASS_ENABLE_FLAG_OFFSET: usize = 65;
 
 static FLAG_ADDRESS: AtomicUsize = AtomicUsize::new(0);
 static BACKGROUND_THREAD_RUNNING: AtomicBool = AtomicBool::new(false);
 
+static HOST: OnceLock<Vec<u16>> = OnceLock::new();
 /* patch for login done by pmagixc (https://github.com/pmagixc/hk4e-patch-universal/commit/9cf28499e50e9831566ca95487f79e40d22156da) */
 impl MhyModule for MhyContext<HoYoPass> {
     unsafe fn init(&mut self) -> Result<()> {
-        
-        let mut success = false;
-        
-        let login_manager_initialize = util::pattern_scan_il2cpp(self.assembly_name, LOGIN_MANAGER_INITIALIZE);
-        
-        if let Some(addr) = login_manager_initialize {
-            println!("hoyopass_loginmanager_initialize: {:x}", addr as usize);
-            
-            self.interceptor.attach(
-                addr as usize,
-                on_login_manager_initialize,
-            )?;
-            
-            success = true;
-            
-            if !BACKGROUND_THREAD_RUNNING.swap(true, Ordering::Relaxed) {
-                std::thread::spawn(|| {
-                    loop {
-                        std::thread::sleep(std::time::Duration::from_millis(10));
-                        
-                        let flag_addr = FLAG_ADDRESS.load(Ordering::Relaxed);
-                        if flag_addr != 0 {
-                            unsafe {
-                                std::ptr::write_volatile(flag_addr as *mut u8, 0u8);
-                            }
-                        }
-                    }
-                });
-            }
-            
-        } else {
-            println!("failed to obtain pattern");
-        }
-        
-        let sdk_initialize = util::pattern_scan_il2cpp(self.assembly_name, HOYOPASS_SDK_INITIALIZE);
-        
-        if let Some(addr) = sdk_initialize {
-            println!("hoyopass_sdk_initialize: {:x}", addr as usize);
-            
-            self.interceptor.replace(
-                addr as usize,
-                on_hoyopass_sdk_initialize_replacement,
-            )?;
-            
-            println!("forced return 0 on sdk");
-            success = true;
-        } else {
-            println!("failed to obtain sdk pattern");
-        }
-        
-        if !success {
-            return Err(anyhow::anyhow!("failed to obtain any pattern"));
-        }
+        let winhttp = GetModuleHandleA(s!("winhttp.dll"))?;
+        let connect = GetProcAddress(winhttp, s!("WinHttpConnect")).unwrap() as usize;
+        let openrequest = GetProcAddress(winhttp, s!("WinHttpOpenRequest")).unwrap() as usize;
+
+        self.interceptor.attach(connect, on_connect);
+        self.interceptor.attach(openrequest, on_open_request);
 
         Ok(())
     }
@@ -85,23 +38,35 @@ impl MhyModule for MhyContext<HoYoPass> {
     }
 }
 
-unsafe extern "win64" fn on_login_manager_initialize(reg: *mut Registers, _: usize) {
-    let this_ptr = (*reg).rcx as *mut u8;
-    let flag_addr = this_ptr.add(HOYOPASS_ENABLE_FLAG_OFFSET);
-    
-    FLAG_ADDRESS.store(flag_addr as usize, Ordering::Relaxed);
+// todo get port from url, best in initial setup
+unsafe extern "win64" fn on_connect(reg: *mut Registers, _: usize) {
+    if ENDPOINTS.sdk.is_none() {
+        return;
+    }
+    println!("on_connect");
+    let url = if let Some(sdk) = &ENDPOINTS.sdk {
+        sdk.to_string()
+    } else{
+        return;
+    };
 
-    std::ptr::write_volatile(flag_addr, 0u8);
-    
-    println!("disabled hoyopass flag at +{} ({:x})", 
-             HOYOPASS_ENABLE_FLAG_OFFSET, flag_addr as usize);
+    /*let host = HOST.get_or_init(|| {
+        url.encode_utf16()
+            .chain(std::iter::once(0))
+            .collect()
+    });*/
+    let host = HOST.get_or_init(|| {
+        "127.0.0.1".encode_utf16()
+            .chain(std::iter::once(0))
+            .collect()
+    });
+
+    (*reg).rdx = host.as_ptr() as u64;
+    (*reg).r8 = 8443 as u64;
 }
 
-unsafe extern "win64" fn on_hoyopass_sdk_initialize_replacement(
-    _reg: *mut Registers,
-    _: usize,
-    _: usize,
-) -> usize {
-    println!("force success on sdk init");
-    0
+// todo get if https from url
+unsafe extern "win64" fn on_open_request(reg: *mut Registers, _: usize) {
+    let flags_ptr = ((*reg).rsp + 0x38) as *mut u32;
+    *flags_ptr &= !WINHTTP_FLAG_SECURE.0;
 }

@@ -103,7 +103,7 @@ pub unsafe fn pattern_scan_il2cpp(module: &str, pattern: &str) -> Option<*mut u8
     let mod_base = module_handle_addr as *const u8;
     let dos_header = unsafe { &*(mod_base as *const IMAGE_DOS_HEADER) };
     let nt_headers = unsafe { &*((mod_base.offset(dos_header.e_lfanew as isize)) as *const IMAGE_NT_HEADERS) };
-    
+
     let section_headers = unsafe {
         std::slice::from_raw_parts(
             (mod_base.offset(dos_header.e_lfanew as isize) as *const u8).offset(std::mem::size_of::<IMAGE_NT_HEADERS>() as isize) as *const IMAGE_SECTION_HEADER,
@@ -119,6 +119,7 @@ pub unsafe fn pattern_scan_il2cpp(module: &str, pattern: &str) -> Option<*mut u8
         println!("Failed to find il2cpp section");
         return None;
     }
+
     
     let il2cpp_base = mod_base.offset(il2cpp_section.unwrap().VirtualAddress as isize);
     let il2cpp_size = il2cpp_section.unwrap().SizeOfRawData as usize;
@@ -126,6 +127,7 @@ pub unsafe fn pattern_scan_il2cpp(module: &str, pattern: &str) -> Option<*mut u8
     let mut cursor = Cursor::new(il2cpp_slice);
      
     let loc = scan_first_match(&mut cursor, pattern.replace("??", "?").as_str()).unwrap();
+
     match loc {
         None => None,
         Some(loc) => Some((il2cpp_base.wrapping_add(loc)) as *mut u8),

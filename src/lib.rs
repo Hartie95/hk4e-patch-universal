@@ -91,8 +91,21 @@ impl std::fmt::Display for UAType {
         } )
     }
 }
+impl std::fmt::Display for REGION {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", match *self {
+            REGION::OS => "OS",
+            REGION::CN => "CN",
+            REGION::INVALID => "INVALID",
+        } )
+    }
+}
 
 unsafe fn thread_func(region: REGION, version: GameVersion) {
+    initConsole();
+    print_header(region, version);
+    parse_parameters();
+    setup_logging();
 
     let mut module_manager = MODULE_MANAGER.write().unwrap();
 
@@ -206,27 +219,19 @@ fn loadMhypnot(){
 #[allow(non_snake_case)]
 unsafe extern "system" fn DllMain(_: HINSTANCE, call_reason: u32, _: *mut ()) -> bool {
     if call_reason == DLL_PROCESS_ATTACH {
-        parse_parameters();
-        initConsole();
-        setup_logging();
         let region = getRegionByExe();
         let version = read_game_version(region);
         match version {
             Ok(version) => {
-                print_header(region, version);
                 if version.use_mhynot(){
                     loadMhypnot();
                 }
-                #[cfg(debug_assertions)]
-                {
-                    thread_func(region, version);
-                }
-                #[cfg(not(debug_assertions))]
-                {
-                    std::thread::spawn(move || thread_func(region, version));
-                }
+                thread::spawn(move || thread_func(region, version));
             }
-            version => {}
+            Err(error) => {
+                initConsole();
+                println!("failed to identify game region {region} or version: {error}");
+            }
         }
     }
 

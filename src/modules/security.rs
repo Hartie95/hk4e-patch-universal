@@ -26,8 +26,13 @@ const VERIFY_DATA: &str = "48 89 5C 24 10 48 89 6C 24 18 56 48 83 EC 30 48 8B 05
 const KEY_SIGN_CHECK_OFFSET: usize = 0x0;
 
 //const SDK_UTIL_RSA_ENCRYPT: &str = "48 89 5C 24 08 48 89 74 24 10 57 48 83 EC 20 48 8B F9 48 8B F2 48 8B 0D ? ? ? ? E8 ";
+//SDKUtil.RSAEncrypt
+const SDK_UTIL_RSA_ENCRYPT: &str = "48 89 5C 24 08 48 89 74 24 10 57 48 83 EC 20 48 8B F9 48 8B F2 48 8B 0D ?? ?? 31 ?? E8 ?? ?? ?? ?? 33 D2 48 8B C8 48 8B D8 E8 ?? ?? ?? FF 48 85 DB 0F 84 82 00 00 00 4C 8B 0B 48 8B D7 48 8B CB 4D 8B 81 B8 01 00 00 41 FF 91 B0 01 00 00 33 C9 E8 ?? ?? ?? FF 48 85 C0 74 59 4C 8B 08 48 8B D6";
+// 48 89 5C 24 08 48 89 74 24 10 57 48 83 EC 20 48 8B F9 48 8B F2 48 8B 0D 24 59 31 04 E8 3F D7 09 FB 33 D2 48 8B C8 48 8B D8 E8 B2 9E 76 FF 48 85 DB 0F 84 82 00 00 00 4C 8B 0B 48 8B D7 48 8B CB 4D 8B 81 B8 01 00 00 41 FF 91 B0 01 00 00 33 C9 E8 6B BC B3 FF 48 85 C0 74 59 4C 8B 08 48 8B D6
+// 48 89 5C 24 08 48 89 74 24 10 57 48 83 EC 20 48 8B F9 48 8B F2 48 8B 0D ?? ?? 31 ?? E8 ?? ?? ?? ?? 33 D2 48 8B C8 48 8B D8 E8 ?? ?? ?? FF 48 85 DB 0F 84 82 00 00 00 4C 8B 0B 48 8B D7 48 8B CB 4D 8B 81 B8 01 00 00 41 FF 91 B0 01 00 00 33 C9 E8 ?? ?? ?? FF 48 85 C0 74 59 4C 8B 08 48 8B D6
+
 //MiHoYoSDKUtil.RSAEncrypt
-const SDK_UTIL_RSA_ENCRYPT: &str = "48 89 74 24 10 57 48 83 EC 20 48 8B 05 ?? ?? ?? 05 48 8B F9 48 8B F2 48 8B 80 B8 00 00 00 48 8B 48 10 48 85 C9 75 21 48 8B 00 81 78 18 3F 2F 00 00 0F 8E AD 00 00 00 0F 86 4E 01 00 00 38 88 5F 2F 00 00 0F 95 C0 EB 0D 45 33 C0 BA 3F 2F 00 00 E8 ?? ?? ?? 00 84 C0 0F 84 87 00 00 00 48 8B 05";
+const MIHOYO_SDK_UTIL_RSA_ENCRYPT: &str = "48 89 74 24 10 57 48 83 EC 20 48 8B 05 ?? ?? ?? 05 48 8B F9 48 8B F2 48 8B 80 B8 00 00 00 48 8B 48 10 48 85 C9 75 21 48 8B 00 81 78 18 3F 2F 00 00 0F 8E AD 00 00 00 0F 86 4E 01 00 00 38 88 5F 2F 00 00 0F 95 C0 EB 0D 45 33 C0 BA 3F 2F 00 00 E8 ?? ?? ?? 00 84 C0 0F 84 87 00 00 00 48 8B 05";
 // 48 89 74 24 10 57 48 83 EC 20 48 8B 05 EF 99 29 05 48 8B F9 48 8B F2 48 8B 80 B8 00 00 00 48 8B 48 10 48 85 C9 75 21 48 8B 00 81 78 18 3F 2F 00 00 0F 8E AD 00 00 00 0F 86 4E 01 00 00 38 88 5F 2F 00 00 0F 95 C0 EB 0D 45 33 C0 BA 3F 2F 00 00 E8 AB E4 6C 00 84 C0 0F 84 87 00 00 00 48 8B 05
 // 48 89 74 24 10 57 48 83 EC 20 48 8B 05 ?? ?? ?? 05 48 8B F9 48 8B F2 48 8B 80 B8 00 00 00 48 8B 48 10 48 85 C9 75 21 48 8B 00 81 78 18 3F 2F 00 00 0F 8E AD 00 00 00 0F 86 4E 01 00 00 38 88 5F 2F 00 00 0F 95 C0 EB 0D 45 33 C0 BA 3F 2F 00 00 E8 ?? ?? ?? 00 84 C0 0F 84 87 00 00 00 48 8B 05
 
@@ -104,6 +109,18 @@ impl MhyModule for MhyContext<Security> {
         {
             println!("Failed to find sdk_util_rsa_encrypt");
         }
+        let mihoyosdk_util_rsa_encrypt = util::pattern_scan_il2cpp(self.assembly_name, MIHOYO_SDK_UTIL_RSA_ENCRYPT);
+        if let Some(addr) = mihoyosdk_util_rsa_encrypt {
+            println!("mihoyosdk_util_rsa_encrypt: {:x}", addr as usize);
+            self.interceptor.attach(
+                addr as usize,
+                on_sdk_util_rsa_encrypt,
+            )?;
+        }
+        else
+        {
+            println!("Failed to find mihoyosdk_util_rsa_encrypt");
+        }
         let sdk_util_rsa_encrypt = util::pattern_scan_il2cpp(self.assembly_name, RSA_UTIL_RSA_ENCRYPT);
         if let Some(addr) = sdk_util_rsa_encrypt {
             println!("sdk_util_rsa_encrypt: {:x}", addr as usize);
@@ -169,44 +186,44 @@ unsafe extern "win64" fn on_mhy_rsa(reg: *mut Registers, _: usize) {
 }
 
 unsafe extern "win64" fn on_sdk_util_rsa_encrypt(reg: *mut Registers, _: usize) {
-    println!("[*] SDK RSA: key replaced");
+    /*println!("[*] SDK RSA: key replaced");
     let str_length = *((*reg).rcx.wrapping_add(16) as *const u32);
     let str_ptr = (*reg).rcx.wrapping_add(20) as *const u8;
 
     let slice = std::slice::from_raw_parts(str_ptr, (str_length * 2) as usize);
     let key = String::from_utf16le(slice).unwrap();
-    println!("[*] SDK RSA: previous key {key}");
+    println!("[*] SDK RSA: previous key {key}");*/
     (*reg).rcx =
         marshal::ptr_to_string_ansi(CString::new(SDK_PUBLIC_KEY).unwrap().as_c_str()) as u64;
 
-    let str_length = *((*reg).rcx.wrapping_add(16) as *const u32);
+    /*let str_length = *((*reg).rcx.wrapping_add(16) as *const u32);
     let str_ptr = (*reg).rcx.wrapping_add(20) as *const u8;
 
     let slice = std::slice::from_raw_parts(str_ptr, (str_length * 2) as usize);
     let key = String::from_utf16le(slice).unwrap();
-    println!("[*] SDK RSA: new key {key}");
+    println!("[*] SDK RSA: new key {key}");*/
 }
 unsafe extern "win64" fn on_rsa_util_rsa_encrypt(reg: *mut Registers, _: usize) {
-    println!("[*] SDK RSA: key replaced");
+    /*println!("[*] SDK RSA: key replaced");
     let str_length = *((*reg).rcx.wrapping_add(16) as *const u32);
     let str_ptr = (*reg).rcx.wrapping_add(20) as *const u8;
 
     let slice = std::slice::from_raw_parts(str_ptr, (str_length * 2) as usize);
     let key = String::from_utf16le(slice).unwrap();
-    println!("[*] SDK RSA: previous key {key}");
+    println!("[*] SDK RSA: previous key {key}");*/
     (*reg).rcx =
         marshal::ptr_to_string_ansi(CString::new(GC_PUBLIC_KEY).unwrap().as_c_str()) as u64;
 
-    let str_length = *((*reg).rcx.wrapping_add(16) as *const u32);
+    /*let str_length = *((*reg).rcx.wrapping_add(16) as *const u32);
     let str_ptr = (*reg).rcx.wrapping_add(20) as *const u8;
 
     let slice = std::slice::from_raw_parts(str_ptr, (str_length * 2) as usize);
     let key = String::from_utf16le(slice).unwrap();
-    println!("[*] SDK RSA: new key {key}");
+    println!("[*] SDK RSA: new key {key}");*/
 }
 
 unsafe extern "win64" fn on_security_get_public_rsa_key(reg: *mut Registers, _: usize, _: usize,) -> usize {
-    println!("[*] pub RSA: key replaced");
+    println!("[*] gc RSA: key replaced");
     let str_length = *((*reg).rcx.wrapping_add(16) as *const u32);
     let str_ptr = (*reg).rcx.wrapping_add(20) as *const u8;
 

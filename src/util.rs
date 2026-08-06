@@ -61,9 +61,12 @@ pub unsafe fn disable_memprotect_guard() {
     .unwrap();
 }
 
-unsafe fn is_wine() -> bool {
-    let module = GetModuleHandleA(s!("ntdll.dll")).unwrap();
-    GetProcAddress(module, s!("wine_get_version")).is_some()
+pub fn is_wine() -> bool {
+    unsafe {
+        let module = unsafe {GetModuleHandleA(s!("ntdll.dll"))}
+            .expect("ntdll.dll should always be loaded");
+        GetProcAddress(module, s!("wine_get_version")).is_some()
+    }
 }
 
 pub unsafe fn pattern_scan_code(module: &str, pattern: &str) -> Option<*mut u8> {

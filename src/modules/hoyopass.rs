@@ -8,6 +8,7 @@ use windows::core::s;
 use windows::Win32::Networking::WinHttp::WINHTTP_FLAG_SECURE;
 use windows::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
 use crate::config::ENDPOINTS;
+use crate::version::GameVersion;
 
 pub struct HoYoPass;
 
@@ -17,7 +18,7 @@ static BACKGROUND_THREAD_RUNNING: AtomicBool = AtomicBool::new(false);
 static HOST: OnceLock<Vec<u16>> = OnceLock::new();
 /* patch for login done by pmagixc (https://github.com/pmagixc/hk4e-patch-universal/commit/9cf28499e50e9831566ca95487f79e40d22156da) */
 impl MhyModule for MhyContext<HoYoPass> {
-    unsafe fn init(&mut self) -> Result<()> {
+    unsafe fn init(&mut self, version: GameVersion) -> Result<()> {
         let winhttp = GetModuleHandleA(s!("winhttp.dll"))?;
         let connect = GetProcAddress(winhttp, s!("WinHttpConnect")).unwrap() as usize;
         let openrequest = GetProcAddress(winhttp, s!("WinHttpOpenRequest")).unwrap() as usize;

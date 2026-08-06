@@ -1,86 +1,107 @@
 #![feature(str_from_utf16_endian)]
 
-use std::{sync::RwLock, thread};
+use std::{fmt, sync::RwLock, thread};
 
+use crate::arguments::parse_parameters;
+use crate::config::CONFIG;
+use clap::Parser;
 use lazy_static::lazy_static;
 use modules::{CcpBlocker, Misc};
-use windows::Win32::System::Console;
-use windows::Win32::System::SystemServices::DLL_PROCESS_ATTACH;
-use windows::Win32::{Foundation::HINSTANCE, System::LibraryLoader::GetModuleFileNameA};
 use std::ffi::CStr;
-use std::path::Path;
 use std::thread::sleep;
 use std::time::Duration;
-use clap::Parser;
-use url::Url;
+use std::{
+    io::{Read, Seek},
+    path::Path,
+};
 use windows::core::s;
-use windows::Win32::System::LibraryLoader::GetModuleHandleA;
-use config::{ENDPOINTS};
-use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
+use windows::Win32::System::Console;
+use windows::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress, LoadLibraryW};
+use windows::Win32::System::SystemServices::DLL_PROCESS_ATTACH;
+use windows::Win32::{Foundation::HINSTANCE, System::LibraryLoader::GetModuleFileNameA};
 
 mod interceptor;
 mod marshal;
 mod modules;
 mod util;
 mod config;
+mod version;
+mod arguments;
+mod logging;
 
-use crate::modules::{Http, MhyContext, ModuleManager, Security, HoYoPass};
+use crate::modules::{HoYoPass, Http, MhyContext, ModuleManager, Security};
+use crate::version::{read_game_version, GameVersion};
+use crate::logging::{setup_logging};
 
-fn parse_http_url(input: &str) -> Result<Url, String> {
-    let mut u = Url::parse(input)
-        .or_else(|_| Url::parse(&format!("http://{input}")))
-        .map_err(|e| format!("invalid URL `{input}`: {e}"))?;
 
-    match u.scheme() {
-        "http" | "https" => {}
-        s => return Err(format!("unsupported scheme `{s}` (only http/https)")),
-    }
-    if u.host().is_none() {
-        return Err("missing host".into());
-    }
-    if !u.username().is_empty() || u.password().is_some() {
-        return Err("credentials in URL are not allowed".into());
-    }
-    u.set_fragment(None);
-    Ok(u)
-}
-
-#[derive(Parser, Debug)]
-#[command(author, version, about)]
-struct Cli {
-    /// Redirects *all* targets (acts as default/base).
-    /// Env: REDIRECT
-    #[arg(long, env = "REDIRECT", value_parser = parse_http_url)]
-    redirect: Option<Url>,
-
-    /// Redirects only the dispatch target (overrides --redirect for dispatch).
-    /// Env: DISPATCH_URL
-    #[arg(long, env = "DISPATCH_URL", value_parser = parse_http_url)]
-    dispatch: Option<Url>,
-
-    /// Redirects only SDK/“other” targets (overrides --redirect for sdk).
-    /// Env: SDK_URL
-    #[arg(long, env = "SDK_URL", value_parser = parse_http_url)]
-    sdk: Option<Url>,
-}
 const UA_DLL_NAME: &str = "UserAssembly.dll";
 
 unsafe fn initConsole(){
     Console::AllocConsole().unwrap();
-    println!("Genshin Impact encryption patch\nMade by xeondev\nmodded by hartie95 for chainload");
 }
 
-unsafe fn thread_func() {
+fn print_header(region: REGION, version: GameVersion){
+    println!("Legacy Genshin Impact encryption patch\nMade by hartie95\nOriginally by xeondev\ngame version: {version}");
+}
+
+unsafe fn getRegionByExe() -> REGION{
+    let mut buffer = [0u8; 260];
+    GetModuleFileNameA(None, &mut buffer);
+    let exe_path = CStr::from_ptr(buffer.as_ptr() as *const i8).to_str().unwrap();
+    let exe_name = Path::new(exe_path).file_name().unwrap().to_str().unwrap();
+    println!("Current executable name: {}", exe_name);
+
+    if exe_name == "GenshinImpact.exe"{
+        REGION::OS
+    } else if exe_name == "YuanShen.exe" {
+        REGION::CN
+    } else {
+        REGION::INVALID
+    }
+}
+enum UAType{
+    EXPORTED,
+    TABLE_EXPORTED,
+    INLINED,
+    NONE
+}
+impl UAType {
+    fn toString(&self)->&str{
+        match *self {
+            UAType::EXPORTED => "EXPORTED",
+            UAType::TABLE_EXPORTED => "TABLE_EXPORTED",
+            UAType::INLINED => "INLINED",
+            UAType::NONE => "NONE",
+        }
+    }
+}
+
+#[cfg(debug_assertions)]
+const LOG_LEVEL: tracing::Level = tracing::Level::DEBUG;
+#[cfg(not(debug_assertions))]
+const LOG_LEVEL: tracing::Level = tracing::Level::INFO;
+
+impl std::fmt::Display for UAType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", match *self {
+            UAType::EXPORTED => "EXPORTED",
+            UAType::TABLE_EXPORTED => "TABLE_EXPORTED",
+            UAType::INLINED => "INLINED",
+            UAType::NONE => "NONE",
+        } )
+    }
+}
+
+unsafe fn thread_func(region: REGION, version: GameVersion) {
 
     let mut module_manager = MODULE_MANAGER.write().unwrap();
 
     // Block query_security_file ASAP
-    let _ = module_manager.enable(MhyContext::<CcpBlocker>::new(""));
+    let _ = module_manager.enable(MhyContext::<CcpBlocker>::new(""), version);
 
-    // todo only skip if mhynot2 is loaded
-    //util::disable_memprotect_guard();
-
-    println!("Genshin Impact encryption patch\nMade by xeondev\n(Modded for all version > 5.0)");
+    if !version.use_mhynot() {
+        util::disable_memprotect_guard();
+    }
 
     let mut buffer = [0u8; 260];
     GetModuleFileNameA(None, &mut buffer);
@@ -93,50 +114,77 @@ unsafe fn thread_func() {
         return;
     }
 
-    let mut usesRedirect = false;
 
-    let cli = Cli::parse();
-    if let Some(redirect) = cli.redirect {
-        println!("Setting up redirect: {}", redirect);
-        ENDPOINTS.dispatch = Some(redirect.origin().unicode_serialization());
-        ENDPOINTS.sdk = Some(redirect.origin().unicode_serialization());
-        usesRedirect = true;
-    }
-    if let Some(dispatch) = cli.dispatch {
-        println!("Setting up dispatch redirect: {}", dispatch);
-        ENDPOINTS.dispatch = Some(dispatch.origin().unicode_serialization());
-        usesRedirect = true;
-    }
-    if let Some(sdk) = cli.sdk {
-        println!("Setting up sdk redirect: {}", sdk);
-        ENDPOINTS.sdk = Some(sdk.origin().unicode_serialization());
-        usesRedirect = true;
-    }
 
     println!("Initializing modules...");
-    if let Err(e) = module_manager.enable(MhyContext::<HoYoPass>::new(&exe_name)){
+    if let Err(e) = module_manager.enable(MhyContext::<HoYoPass>::new(&exe_name), version){
         println!("Error initializing hoyopass, if on 6.0+ this causes login problems: {}", e)
     };
 
-    println!("Waiting for ua");
-    while !is_user_assembly_loaded() {
-        thread::sleep(Duration::from_millis(10));
-    }
-    sleep(Duration::from_secs(2));
 
-    let _ = module_manager.enable(MhyContext::<Security>::new(UA_DLL_NAME));
+    if version.has_ua() {
+        println!("Waiting for ua");
+        while !is_user_assembly_loaded() {
+            sleep(Duration::from_millis(10));
+        }
+        sleep(Duration::from_secs(2));
+    }
+
+    let uaType = get_ua_type();
+    println!("ua type {uaType}");
+
+    let assembly_name = if version.has_ua() {UA_DLL_NAME} else {exe_name};
+
+    let _ = module_manager.enable(MhyContext::<Security>::new(assembly_name), version);
 
     marshal::find();
 
-    if usesRedirect {
-        if let Err(e) = module_manager.enable(MhyContext::<Http>::new(UA_DLL_NAME)){
+    if CONFIG.usesRedirect {
+        if let Err(e) = module_manager.enable(MhyContext::<Http>::new(assembly_name), version){
             println!("Error initializing https module, automatic redirects will not work, use a proxy instead: {}", e)
         };
     }
-    let _ = module_manager.enable(MhyContext::<Misc>::new(&exe_name));
+    let _ = module_manager.enable(MhyContext::<Misc>::new(&exe_name), version);
 
     println!("Successfully initialized!");
 }
+
+
+#[derive(Clone, Copy)]
+enum REGION{
+    CN,
+    OS,
+    INVALID
+}
+
+fn get_ua_type() -> UAType {
+    if !is_user_assembly_loaded() {
+        return UAType::NONE;
+    }
+    let uaHandle = unsafe { GetModuleHandleA(s!("UserAssembly.dll")) }.unwrap();
+
+    let il2cpp_function_address = unsafe { GetProcAddress(uaHandle, s!("il2cpp_class_get_type")) };
+    match il2cpp_function_address {
+        Some(addr) => {
+            return UAType::EXPORTED;
+        }
+        None => {
+            println!("Export does not exist, 3.2+");
+        }
+    }
+    let il2cpp_table_address = unsafe { GetProcAddress(uaHandle, s!("il2cpp_get_api_table")) };
+    match il2cpp_table_address {
+        Some(addr) => {
+            return UAType::TABLE_EXPORTED;
+        }
+        None => {
+            println!("table export does not exist, 4.3+(?)");
+        }
+    }
+
+    return UAType::INLINED;
+}
+
 
 lazy_static! {
     static ref MODULE_MANAGER: RwLock<ModuleManager> = RwLock::new(ModuleManager::default());
@@ -145,25 +193,40 @@ fn is_user_assembly_loaded() -> bool {
     unsafe { GetModuleHandleA(s!("UserAssembly.dll")).is_ok() }
 }
 
-// todo check if mhynot2.dll exists, otherwise don't try to load
-unsafe fn loadMhypnot(){
-    let libwinpthread = LoadLibraryW(&windows::core::HSTRING::from("libwinpthread-1.dll")).unwrap();
-    let mhypnot = LoadLibraryW(&windows::core::HSTRING::from("mhynot2.dll")).unwrap();
+fn loadMhypnot(){
+    if Path::new("libwinpthread-1.dll").exists() {
+        let libwinpthread = unsafe { LoadLibraryW(&windows::core::HSTRING::from("libwinpthread-1.dll")) }.unwrap();
+    }
+    if Path::new("mhynot2.dll").exists() {
+        let mhypnot = unsafe { LoadLibraryW(&windows::core::HSTRING::from("mhynot2.dll")) }.unwrap();
+    }
 }
 
 #[no_mangle]
 #[allow(non_snake_case)]
 unsafe extern "system" fn DllMain(_: HINSTANCE, call_reason: u32, _: *mut ()) -> bool {
     if call_reason == DLL_PROCESS_ATTACH {
+        parse_parameters();
         initConsole();
-        loadMhypnot();
-        #[cfg(debug_assertions)]
-        {
-            thread_func();
-        }
-        #[cfg(not(debug_assertions))]
-        {
-            std::thread::spawn(|| thread_func());
+        setup_logging();
+        let region = getRegionByExe();
+        let version = read_game_version(region);
+        match version {
+            Ok(version) => {
+                print_header(region, version);
+                if version.use_mhynot(){
+                    loadMhypnot();
+                }
+                #[cfg(debug_assertions)]
+                {
+                    thread_func(region, version);
+                }
+                #[cfg(not(debug_assertions))]
+                {
+                    std::thread::spawn(move || thread_func(region, version));
+                }
+            }
+            version => {}
         }
     }
 

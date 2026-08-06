@@ -163,7 +163,7 @@ impl fmt::Display for GameVersion {
 pub fn read_game_version(region: REGION) -> io::Result<GameVersion> {
     let target_path = match region {
         REGION::OS => "GenshinImpact_Data/globalgamemanagers",
-        REGION::CN => "GenshinImpact_Data/globalgamemanagers",
+        REGION::CN => "YuanShen_Data/globalgamemanagers",
         _ => {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,

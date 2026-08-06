@@ -5,7 +5,9 @@ use windows::Win32::{System::LibraryLoader::GetModuleFileNameA};
 use std::path::Path;
 
 //const PTR_TO_STRING_ANSI: &str = "E9 ?? ?? ?? ?? CC CC CC CC CC CC CC CC CC CC CC 40 53 48 83 EC 20 48 8B D9 48 8B 0D ?? ?? ?? ??";
-const PTR_TO_STRING_ANSI: &str = "E9 BB FF 65 FB CC CC CC CC CC CC CC CC CC CC CC 40 53 48 83 EC 20 48 8B D9 48 8B 0D 08 37 94 04 83 B9 E0 00 00 00 00 75 0C E8 82 C2 6C FB 48 8B";
+// static string Marshal.PtrToStringAnsi(IntPtr ptr)
+const PTR_TO_STRING_ANSI: &str = "E9 ?? ?? ?? ?? CC CC CC CC CC CC CC CC CC CC CC 40 53 48 83 EC 20 48 8B D9 48 8B 0D ?? ?? ?? ?? 83 B9 E0 00 00 00 00 75 0C E8 ?? ?? ?? ?? 48 8B 0D F3 ?? ?? ?? 48 8B 81 B8 00 00 00 83 78 04 02";
+// E9 6B F1 72 FA CC CC CC CC CC CC CC CC CC CC CC 40 53 48 83 EC 20 48 8B D9 48 8B 0D 08 67 98 03 83 B9 E0 00 00 00 00 75 0C E8 F2 AF 79 FA 48 8B 0D F3 66 98 03 48 8B 81 B8 00 00 00 83 78 04 02
 ///
 /// 2.7 E9 ?? ?? ?? ?? CC CC CC CC CC CC CC CC CC CC CC E9 ?? ?? ?? ?? CC CC CC CC CC CC CC CC CC CC CC E9 ?? ?? ?? ?? CC CC CC CC CC CC CC CC CC CC CC | E9 ?? ?? ?? ?? CC CC CC CC CC CC CC CC CC CC CC 40 53 48 83 EC 20 48 8B D9 48 8B 0D ?? ?? ?? ?? 83 B9 E0 00 00 00 00 75 0C E8 ?? ?? ?? ?? 48 8B 0D ?? ?? ?? ?? 48 8B 81 B8 00 00 00 83 78 04 02
 /// 2.8 E9 ?? ?? ?? ?? CC CC CC CC CC CC CC CC CC CC CC E9 ?? ?? ?? ?? CC CC CC CC CC CC CC CC CC CC CC E9 ?? ?? ?? ?? CC CC CC CC CC CC CC CC CC CC CC | E9 ?? ?? ?? ?? CC CC CC CC CC CC CC CC CC CC CC 40 53 48 83 EC 20 48 8B D9 48 8B 0D ?? ?? ?? ?? 83 B9 E0 00 00 00 00 75 0C E8 ?? ?? ?? ?? 48 8B 0D ?? ?? ?? ?? 48 8B 81 B8 00 00 00 83 78 04 02

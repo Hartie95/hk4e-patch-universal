@@ -7,9 +7,12 @@ use std::{
     str::FromStr,
 };
 use crate::REGION;
+use crate::REGION::OS;
+use crate::REGION::CN;
 
 const LAYOUT_MARKER_OFFSET: u64 = 0x11D0;
 const OLD_VERSION_OFFSET: u64 = 0x11F4;
+const OLD_VERSION_CN_OFFSET: u64 = 0x11EC;
 const NEW_VERSION_OFFSET: u64 = 0x1218;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -162,8 +165,8 @@ impl fmt::Display for GameVersion {
 
 pub fn read_game_version(region: REGION) -> io::Result<GameVersion> {
     let target_path = match region {
-        REGION::OS => "GenshinImpact_Data/globalgamemanagers",
-        REGION::CN => "YuanShen_Data/globalgamemanagers",
+        OS => "GenshinImpact_Data/globalgamemanagers",
+        CN => "YuanShen_Data/globalgamemanagers",
         _ => {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
@@ -180,7 +183,14 @@ pub fn read_game_version(region: REGION) -> io::Result<GameVersion> {
     )?;
 
     let text_offset = match layout_marker {
-        1 => OLD_VERSION_OFFSET,
+        1 => {
+            match region {
+                OS => OLD_VERSION_OFFSET,
+                CN => OLD_VERSION_CN_OFFSET,
+                _ => unreachable!(),
+            }
+        },
+        // TODO get cn value for newer versions
         3 => NEW_VERSION_OFFSET,
         value => {
             return Err(io::Error::new(

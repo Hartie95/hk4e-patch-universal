@@ -37,7 +37,10 @@ use crate::logging::{setup_logging};
 const UA_DLL_NAME: &str = "UserAssembly.dll";
 
 unsafe fn initConsole(){
-    Console::AllocConsole().unwrap();
+    match Console::AllocConsole() {
+        Err(error) => println!("Failed to initialize console: {}", error),
+        value => return
+    }
 }
 
 fn print_header(region: REGION, version: GameVersion){

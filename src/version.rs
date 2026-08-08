@@ -3,7 +3,6 @@ use std::{
     fmt,
     fs::File,
     io::{self, Read, Seek, SeekFrom},
-    path::Path,
     str::FromStr,
 };
 use crate::REGION;

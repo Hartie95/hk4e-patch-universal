@@ -7,12 +7,13 @@ use windows::{
     core::s,
     Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress},
 };
+use crate::il2cpp::Il2CppApi;
 use crate::version::GameVersion;
 
 pub struct CcpBlocker;
 
 impl MhyModule for MhyContext<CcpBlocker> {
-    unsafe fn init(&mut self, version: GameVersion) -> Result<()> {
+    unsafe fn init(&mut self, _: GameVersion, _: Option<&Il2CppApi>) -> Result<()> {
         let winsock2 = GetModuleHandleA(s!("Ws2_32.dll")).unwrap();
         let getaddrinfo = GetProcAddress(winsock2, s!("getaddrinfo")).unwrap();
 

@@ -9,6 +9,8 @@ use windows::Win32::System::Memory::{PAGE_EXECUTE_READWRITE, PAGE_PROTECTION_FLA
 use windows::core::{s, PCSTR, PCWSTR};
 use winapi::um::winnt::{IMAGE_DOS_HEADER, IMAGE_NT_HEADERS,IMAGE_SECTION_HEADER};
 use std::slice;
+use base64::{engine::general_purpose::STANDARD, Engine};
+use rsa::{traits::PublicKeyParts, RsaPublicKey};
 
 pub fn wide_str(value: &str) -> Vec<u16> {
     OsStr::new(value).encode_wide().chain(once(0)).collect()
@@ -63,7 +65,7 @@ pub unsafe fn disable_memprotect_guard() {
 
 pub fn is_wine() -> bool {
     unsafe {
-        let module = unsafe {GetModuleHandleA(s!("ntdll.dll"))}
+        let module = GetModuleHandleA(s!("ntdll.dll"))
             .expect("ntdll.dll should always be loaded");
         GetProcAddress(module, s!("wine_get_version")).is_some()
     }
@@ -135,4 +137,13 @@ pub unsafe fn pattern_scan_il2cpp(module: &str, pattern: &str) -> Option<*mut u8
         None => None,
         Some(loc) => Some((il2cpp_base.wrapping_add(loc)) as *mut u8),
     }
+}
+
+pub fn rsa_public_key_to_xml(key: &RsaPublicKey) -> String {
+    let modulus = STANDARD.encode(key.n().as_ref().to_be_bytes());
+    let exponent = STANDARD.encode(key.e().to_be_bytes());
+
+    format!(
+        "<RSAKeyValue><Modulus>{modulus}</Modulus><Exponent>{exponent}</Exponent></RSAKeyValue>"
+    )
 }

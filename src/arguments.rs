@@ -1,6 +1,6 @@
 use clap::Parser;
 use url::Url;
-use crate::config::{CONFIG, ENDPOINTS};
+use crate::config::{AppConfig, PATCHER_CONFIG};
 
 fn parse_http_url(input: &str) -> Result<Url, String> {
     let mut u = Url::parse(input)
@@ -47,21 +47,23 @@ struct Cli {
 
 pub unsafe fn parse_parameters() {
     let cli = Cli::parse();
+    let mut config: AppConfig = AppConfig::default();
     if let Some(redirect) = cli.redirect {
         println!("Setting up redirect: {}", redirect);
-        ENDPOINTS.dispatch = Some(redirect.origin().unicode_serialization());
-        ENDPOINTS.sdk = Some(redirect.origin().unicode_serialization());
-        CONFIG.usesRedirect = true;
+        config.redirect_config.dispatch = Some(redirect.origin().unicode_serialization());
+        config.redirect_config.sdk = Some(redirect.origin().unicode_serialization());
+        config.use_redirects = true;
     }
     if let Some(dispatch) = cli.dispatch {
         println!("Setting up dispatch redirect: {}", dispatch);
-        ENDPOINTS.dispatch = Some(dispatch.origin().unicode_serialization());
-        CONFIG.usesRedirect = true;
+        config.redirect_config.dispatch = Some(dispatch.origin().unicode_serialization());
+        config.use_redirects = true;
     }
     if let Some(sdk) = cli.sdk {
         println!("Setting up sdk redirect: {}", sdk);
-        ENDPOINTS.sdk = Some(sdk.origin().unicode_serialization());
-        CONFIG.usesRedirect = true;
+        config.redirect_config.sdk = Some(sdk.origin().unicode_serialization());
+        config.use_redirects = true;
     }
 
+    PATCHER_CONFIG.set(config).unwrap();
 }

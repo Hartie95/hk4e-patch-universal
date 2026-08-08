@@ -15,6 +15,7 @@ pub use hoyopass::HoYoPass;
 pub use http::Http;
 pub use misc::Misc;
 pub use security::Security;
+use crate::il2cpp::Il2CppApi;
 use crate::version::GameVersion;
 
 #[derive(Default)]
@@ -25,9 +26,9 @@ unsafe impl Sync for ModuleManager {}
 unsafe impl Send for ModuleManager {}
 
 impl ModuleManager {
-    pub unsafe fn enable(&mut self, module: impl MhyModule + 'static, version: GameVersion) -> Result<()> {
+    pub unsafe fn enable(&mut self, module: impl MhyModule + 'static, version: GameVersion, il2cpp_api: Option<&Il2CppApi>) -> Result<()> {
         let mut boxed_module = Box::new(module);
-        let init_result = boxed_module.init(version);
+        let init_result = boxed_module.init(version, il2cpp_api);
         if init_result.is_err() {
             return init_result
         }
@@ -56,7 +57,7 @@ pub enum ModuleType {
 }
 
 pub trait MhyModule {
-    unsafe fn init(&mut self, version: GameVersion) -> Result<()>;
+    unsafe fn init(&mut self, version: GameVersion, il2cpp_api: Option<&Il2CppApi>) -> Result<()>;
     unsafe fn de_init(&mut self) -> Result<()>;
     fn get_module_type(&self) -> ModuleType;
 }

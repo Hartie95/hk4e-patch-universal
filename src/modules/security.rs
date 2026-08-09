@@ -53,7 +53,7 @@ const SECURITY_GET_PUBLIC_RSA_KEY: &str = "48 8B 05 A1 ?? ?? ?? C3 CC CC CC CC C
 const KEY_SIZE: usize = 268;
 
 lazy_static! {
-    pub static ref PUBLIC_KEY_DER: Vec<u8> = {
+    pub static ref PUBLIC_SIGNING_DER_KEY: Vec<u8> = {
         let key = RsaPublicKey::from_public_key_pem(
             PATCHER_CONFIG.get().unwrap().encryption_config.signing_key.as_str(),
         )
@@ -62,9 +62,26 @@ lazy_static! {
         let der = key.to_pkcs1_der().unwrap();
         der.as_bytes()[2..].to_vec()
     };
-    pub static ref PUBLIC_XML_KEY_STRING: String = {
+    pub static ref PUBLIC_SIGNING_XML_KEY: String = {
         let key = RsaPublicKey::from_public_key_pem(
             PATCHER_CONFIG.get().unwrap().encryption_config.signing_key.as_str(),
+        )
+        .unwrap();
+
+        util::rsa_public_key_to_xml(&key)
+    };
+    pub static ref PUBLIC_ENCRYPTION_DER_KEY: Vec<u8> = {
+        let key = RsaPublicKey::from_public_key_pem(
+            PATCHER_CONFIG.get().unwrap().encryption_config.encryption_key.as_str(),
+        )
+        .unwrap();
+
+        let der = key.to_pkcs1_der().unwrap();
+        der.as_bytes()[2..].to_vec()
+    };
+    pub static ref PUBLIC_ENCRYPTION_XML_KEY: String = {
+        let key = RsaPublicKey::from_public_key_pem(
+            PATCHER_CONFIG.get().unwrap().encryption_config.encryption_key.as_str(),
         )
         .unwrap();
 
@@ -348,10 +365,11 @@ unsafe extern "win64" fn on_mhy_rsa(reg: *mut Registers, _: usize) {
     if ((*reg).r8 as usize) - 3 == KEY_SIZE {
         println!("[*] key replaced");
 
+
         std::ptr::copy_nonoverlapping(
-            PUBLIC_KEY_DER.as_ptr(),
+            PUBLIC_ENCRYPTION_DER_KEY.as_ptr(),
             (*reg).r12 as *mut u8,
-            PUBLIC_KEY_DER.len(),
+            PUBLIC_ENCRYPTION_DER_KEY.len(),
         );
     }
 }
@@ -390,17 +408,17 @@ unsafe extern "win64" fn on_rsa_util_rsa_encrypt(reg: *mut Registers, _: usize) 
 
     log_current_xml_key(reg, target_reg, "[*] RSA utils encrypt previous key:");
 
-    target_reg.set_register(reg, marshal::create_il2cpp_string(&*PUBLIC_XML_KEY_STRING) as u64);
+    target_reg.set_register(reg, marshal::create_il2cpp_string(&*PUBLIC_ENCRYPTION_XML_KEY) as u64);
 
     log_current_xml_key(reg, target_reg, "[*] RSA utils encrypt new key:");
 }
 
 unsafe extern "win64" fn on_security_get_public_rsa_key(reg: *mut Registers, _: usize, _: usize,) -> usize {
     println!("[*] MoleMoleSecurity getPublicRsaKey: replacing key");
-    (*reg).rcx = marshal::create_il2cpp_string(&*PUBLIC_XML_KEY_STRING) as u64;
+    (*reg).rcx = marshal::create_il2cpp_string(&*PUBLIC_SIGNING_XML_KEY) as u64;
 
     if PATCHER_CONFIG.get().unwrap().log_config.log_crypto_keys{
-        println!("[*] get rsa pub key: new key {}", &*PUBLIC_XML_KEY_STRING);
+        println!("[*] get rsa pub key: new key {}", &*PUBLIC_SIGNING_XML_KEY);
     }
 
     (*reg).rcx as usize //todo

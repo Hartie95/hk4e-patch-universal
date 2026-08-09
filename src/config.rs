@@ -51,7 +51,7 @@ impl Default for AppConfig {
             encryption_config: EncryptionConfig {
                 sdk_key: include_str!("../sdk_public_key.xml").to_string(),
                 signing_key: include_str!("../gc_signing.pem").to_string(),
-                encryption_key: include_str!("../gc_public_key.xml").to_string()
+                encryption_key: include_str!("../gc_signing.pem").to_string()
             }
         }
     }

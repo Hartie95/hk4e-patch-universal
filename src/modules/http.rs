@@ -1,4 +1,4 @@
-use super::{MhyContext, MhyModule, ModuleType};
+use super::{Il2cppMethodHookInfo, MhyContext, MhyModule, ModuleType, PatternMethodHookInfo};
 use crate::{il2cpp, marshal};
 use anyhow::Result;
 use ilhook::x64::Registers;
@@ -27,12 +27,57 @@ const BROWSER_LOAD_URL: &str = "48 89 5C 24 08 57 48 83 EC 20 48 8B F9 33 D2 48 
 const BROWSER_LOAD_URL_OFFSET: usize = 0x0;
 //const BROWSER_LOAD_URL_OFFSET: usize = 0x10;
 
-use crate::config::{PATCHER_CONFIG, RUNTIME_CONFIG};
-use crate::il2cpp::Il2CppApi;
+const WEB_REQUEST_UTILS_MAKE_INITIAL_URL_50: &str = "55 41 56 56 57 53 48 81 EC ?? ?? ?? ?? 48 8D AC 24 ?? ?? ?? ?? 48 C7 45 ?? ?? ?? ?? ?? 48 89 D6 48 89 CF 48 8B 0D ?? ?? ?? ??";
+const BROWSER_LOAD_URL_50: &str = "41 B0 01 E9 08 00 00 00 0F 1F 84 00 00 00 00 00 56 57";
+const BROWSER_LOAD_URL_OFFSET_50: usize = 0x10;
+
+use crate::config::{PATCHER_CONFIG, REG, RUNTIME_CONFIG};
+use crate::il2cpp::{Il2CppApi};
 use crate::version::GameVersion;
 
 pub struct Http;
 
+impl Il2cppMethodHookInfo {
+    pub const WEB_REQUEST_MAKE_URL: Self = Self {
+        name: "WEB_REQUEST_MAKE_URL",
+        assembly_name: "UnityEngine.UnityWebRequestModule.dll",
+        namespace: "UnityEngineInternal",
+        class_name: "WebRequestUtils",
+        method_name: "MakeInitialUrl",
+        argument_count: 2,
+    };
+
+    pub const BROWSER_LOAD_URL_28: Self = Self {
+        name: "BROWSER_LOAD_URL_28",
+        assembly_name: "MiHoYoSDK.dll",
+        namespace: "MiHoYo.SDK.Win",
+        class_name: "MiHoYoSDKDll",
+        method_name: "web_load_url",
+        argument_count: 1,
+    };
+    pub const BROWSER_LOAD_URL_10: Self = Self {
+        name: "BROWSER_LOAD_URL_10",
+        assembly_name: "Assembly-CSharp-firstpass.dll",
+        namespace: "MiHoYo.SDK",
+        class_name: "MiHoYoSDKDll",
+        method_name: "web_load_url",
+        argument_count: 1,
+    };
+}
+
+impl PatternMethodHookInfo {
+    // 5.0+
+    pub const WEB_REQUEST_MAKE_URL_50: Self = Self {
+        name: "WEB_REQUEST_MAKE_URL_60",
+        pattern: WEB_REQUEST_UTILS_MAKE_INITIAL_URL_50,
+        offset: 0,
+    };
+    pub const BROWSER_LOAD_URL_50: Self = Self {
+        name: "BROWSER_LOAD_URL_60",
+        pattern: BROWSER_LOAD_URL_50,
+        offset: BROWSER_LOAD_URL_OFFSET_50,
+    };
+}
 
 impl MhyModule for MhyContext<Http> {
     unsafe fn init(&mut self,  version: GameVersion, il2cpp_api: Option<&Il2CppApi>) -> Result<()> {
@@ -41,7 +86,7 @@ impl MhyModule for MhyContext<Http> {
                 self.via_il2cpp(version, api)
             }
             None => {
-                self.via_pattern()
+                self.via_pattern(version)
             }
         }
     }
@@ -50,100 +95,39 @@ impl MhyModule for MhyContext<Http> {
         Ok(())
     }
 
-    fn get_module_type(&self) -> super::ModuleType {
+    fn get_module_type(&self) -> ModuleType {
         ModuleType::Http
     }
 }
 
 impl MhyContext<Http> {
     unsafe fn via_il2cpp(&mut self, version: GameVersion, il2cpp_api: &Il2CppApi) -> Result<()>{
-        let web_request_utils_make_initial_url = il2cpp::find_method_pointer(
-            il2cpp_api,
-            "UnityEngine.UnityWebRequestModule.dll",
-            "UnityEngineInternal",
-            "WebRequestUtils",
-            "MakeInitialUrl",
-            2,
-        );
-        if let Some(addr) = web_request_utils_make_initial_url {
-            println!("[il2cpp]  web_request_utils_make_initial_url: {:x}", addr as usize);
-            self.interceptor.attach(
-                addr as usize,
-                on_make_initial_url,
-            )?;
-        }
-        else
-        {
-            println!("[il2cpp]  Failed to find web_request_utils_make_initial_url");
-        }
+        let _ = self.hook_il2cpp_attach(il2cpp_api, Il2cppMethodHookInfo::WEB_REQUEST_MAKE_URL, on_make_initial_url);
 
-
-        let assembly_name_browser_load = if version.is_before(2, 7, 50) {
-            "Assembly-CSharp-firstpass.dll"
+        let browser_il2ccp_target = if version.is_before(2, 7, 50) {
+            Il2cppMethodHookInfo::BROWSER_LOAD_URL_10
         } else {
-            "MiHoYoSDK.dll"
+            Il2cppMethodHookInfo::BROWSER_LOAD_URL_28
         };
-        let namespace_browser_load = if version.is_before(2, 7, 50) {
-            "MiHoYo.SDK"
-        } else {
-            "MiHoYo.SDK.Win"
-        };
-
-        let browser_load_url = il2cpp::find_method_pointer(
-            il2cpp_api,
-            assembly_name_browser_load,
-            namespace_browser_load,
-            "MiHoYoSDKDll",
-            "web_load_url",
-            1,
-        );
-        if let Some(addr) = browser_load_url {
-            println!("[il2cpp]  browser_load_url: {:x}", addr as usize);
-            self.interceptor.attach(
-                addr as usize,
-                on_browser_load_url,
-            )?;
-        }
-        else
-        {
-            println!("[il2cpp]  Failed to find browser_load_url");
-        }
-
+        let _ = self.hook_il2cpp_attach(il2cpp_api, browser_il2ccp_target, on_browser_load_url);
 
         Ok(())
     }
-    unsafe fn via_pattern(&mut self) -> Result<()> {
-        let web_request_utils_make_initial_url = util::pattern_scan_il2cpp(self.assembly_name, WEB_REQUEST_UTILS_MAKE_INITIAL_URL);
-        if let Some(addr) = web_request_utils_make_initial_url {
-            println!("[pattern] web_request_utils_make_initial_url: {:x}", addr as usize);
-            self.interceptor.attach(
-                addr as usize,
-                on_make_initial_url,
-            )?;
+
+    unsafe fn via_pattern(&mut self, version: GameVersion) -> Result<()> {
+        if version.is_at_least(4, 7, 50) {
+            let _ = self.hook_pattern_attach(PatternMethodHookInfo::WEB_REQUEST_MAKE_URL_50, on_make_initial_url);
+            let _ = self.hook_pattern_attach(PatternMethodHookInfo::BROWSER_LOAD_URL_50, on_browser_load_url);
+            return Ok(())
         }
-        else
-        {
-            println!("[pattern] Failed to find web_request_utils_make_initial_url");
-        }
-        
-        let browser_load_url = util::pattern_scan_il2cpp(self.assembly_name, BROWSER_LOAD_URL);
-        if let Some(addr) = browser_load_url {
-            let addr_offset = addr as usize + BROWSER_LOAD_URL_OFFSET;
-            println!("browser_load_url: {:x}", addr_offset);
-            self.interceptor.attach(
-                addr_offset,
-                on_browser_load_url,
-            )?;
-        }
-        else
-        {
-            println!("Failed to find browser_load_url");
-        }
+
+        println!("not yet supported version {}", version);
 
         Ok(())
     }
 }
 
+// hook implementations
 unsafe extern "win64" fn on_make_initial_url(reg: *mut Registers, _: usize) {
     let redirect_config = &PATCHER_CONFIG.get().unwrap().redirect_config;
     if redirect_config.dispatch.is_none() && redirect_config.sdk.is_none() {

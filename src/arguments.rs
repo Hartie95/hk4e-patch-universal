@@ -25,24 +25,39 @@ fn parse_http_url(input: &str) -> Result<Url, String> {
 #[command(author, version, about)]
 struct Cli {
     /// Redirects *all* targets (acts as default/base).
-    /// Env: REDIRECT
-    #[arg(long, env = "REDIRECT", value_parser = parse_http_url)]
+    /// Env: PATCH_REDIRECT
+    #[arg(long, env = "PATCH_REDIRECT", value_parser = parse_http_url)]
     redirect: Option<Url>,
 
     /// Redirects only the dispatch target (overrides --redirect for dispatch).
-    /// Env: DISPATCH_URL
-    #[arg(long, env = "DISPATCH_URL", value_parser = parse_http_url)]
+    /// Env: PATCH_DISPATCH_URL
+    #[arg(long, env = "PATCH_DISPATCH_URL", value_parser = parse_http_url)]
     dispatch: Option<Url>,
 
     /// Redirects only SDK/“other” targets (overrides --redirect for sdk).
-    /// Env: SDK_URL
-    #[arg(long, env = "SDK_URL", value_parser = parse_http_url)]
+    /// Env: PATCH_SDK_URL
+    #[arg(long, env = "PATCH_SDK_URL", value_parser = parse_http_url)]
     sdk: Option<Url>,
 
-    /// Redirects only SDK/“other” targets (overrides --redirect for sdk).
-    /// Env: SDK_URL
-    #[arg(long, env = "SDK_URL", value_parser = parse_http_url)]
+    /// Enables logging into files, not yet implemented
+    /// Env: PATCH_FILE_LOG
+    #[arg(long, env = "PATCH_FILE_LOG", default_missing_value="true")]
     file_log: Option<bool>,
+
+    /// Enables all available logs
+    /// Env: PATCH_LOG_ALL
+    #[arg(long, env = "PATCH_LOG_ALL")]
+    log_all: Option<bool>,
+
+    /// Enables request redirection logging
+    /// Env: PATCH_LOG_REQUESTS
+    #[arg(long, env = "PATCH_LOG_REQUESTS", default_missing_value="true", num_args=0..=1)]
+    log_requests: Option<bool>,
+
+    /// Enables crypto key logging
+    /// Env: PATCH_LOG_CRYPTO
+    #[arg(long, env = "PATCH_LOG_CRYPTO", default_missing_value="true", num_args=0..=1)]
+    log_crypto: Option<bool>,
 }
 
 pub unsafe fn parse_parameters() {
@@ -63,6 +78,24 @@ pub unsafe fn parse_parameters() {
         println!("Setting up sdk redirect: {}", sdk);
         config.redirect_config.sdk = Some(sdk.origin().unicode_serialization());
         config.use_redirects = true;
+    }
+    if let Some(log) = cli.log_all {
+        println!("Enabling all logging: {}", log);
+        config.log_config.log_connections = log;
+        config.log_config.log_crypto_keys = log;
+    }
+    if let Some(log) = cli.log_crypto {
+        println!("Enabling crypto key logging: {}", log);
+        config.log_config.log_crypto_keys = log;
+    }
+    if let Some(log) = cli.log_requests {
+        println!("Enabling connection redirection logging: {}", log);
+        config.log_config.log_connections = log;
+    }
+
+    if let Some(log) = cli.file_log {
+        println!("Enabling file logging (not yet implemented): {}", log);
+        config.log_config.file_logging = log;
     }
 
     PATCHER_CONFIG.set(config).unwrap();

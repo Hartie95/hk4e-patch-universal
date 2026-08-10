@@ -1,7 +1,6 @@
 use std::collections::HashMap;
-
-use anyhow::Result;
-
+use anyhow::{bail, Result};
+use ilhook::x64::{JmpBackRoutine, RetnRoutine};
 use crate::interceptor::Interceptor;
 
 mod ccp_blocker;
@@ -15,7 +14,8 @@ pub use hoyopass::HoYoPass;
 pub use http::Http;
 pub use misc::Misc;
 pub use security::Security;
-use crate::il2cpp::Il2CppApi;
+use crate::{il2cpp, util};
+use crate::il2cpp::{Il2CppApi};
 use crate::version::GameVersion;
 
 #[derive(Default)]
@@ -47,6 +47,20 @@ impl ModuleManager {
     }
 }
 
+pub struct Il2cppMethodHookInfo {
+    pub name: &'static str,
+    pub assembly_name: &'static str,
+    pub namespace: &'static str,
+    pub class_name: &'static str,
+    pub method_name: &'static str,
+    pub argument_count: i32,
+}
+pub struct PatternMethodHookInfo {
+    pub name: &'static str,
+    pub pattern: &'static str,
+    pub offset: usize,
+}
+
 #[derive(Copy, Clone, Hash, PartialEq, Eq)]
 pub enum ModuleType {
     Http,
@@ -74,6 +88,89 @@ impl<T> MhyContext<T> {
             assembly_name,
             interceptor: Interceptor::new(),
             _phantom: std::marker::PhantomData,
+        }
+    }
+
+    pub unsafe fn hook_il2cpp_attach(&mut self, il2cpp_api: &Il2CppApi, method_info: Il2cppMethodHookInfo, routine: JmpBackRoutine) -> Result<()>{
+        let web_request_utils_make_initial_url = il2cpp::find_method_pointer(
+            il2cpp_api,
+            method_info.assembly_name,
+            method_info.namespace,
+            method_info.class_name,
+            method_info.method_name,
+            method_info.argument_count,
+        );
+        if let Some(addr) = web_request_utils_make_initial_url {
+            println!("[il2cpp]  {}: {:x}", method_info.name, addr as usize);
+            self.interceptor.attach(
+                addr as usize,
+                routine,
+            )?;
+            Ok(())
+        }
+        else
+        {
+            println!("[il2cpp]  Failed to find {}", method_info.name);
+            bail!("Failed to find method")
+        }
+    }
+    pub unsafe fn hook_il2cpp_replace(&mut self, il2cpp_api: &Il2CppApi, method_info: Il2cppMethodHookInfo, routine: RetnRoutine) -> Result<()>{
+        let web_request_utils_make_initial_url = il2cpp::find_method_pointer(
+            il2cpp_api,
+            method_info.assembly_name,
+            method_info.namespace,
+            method_info.class_name,
+            method_info.method_name,
+            method_info.argument_count,
+        );
+        if let Some(addr) = web_request_utils_make_initial_url {
+            println!("[il2cpp]  {}: {:x}", method_info.name, addr as usize);
+            self.interceptor.replace(
+                addr as usize,
+                routine,
+            )?;
+            Ok(())
+        }
+        else
+        {
+            println!("[il2cpp]  Failed to find {}", method_info.name);
+            bail!("Failed to find method")
+        }
+    }
+
+    pub unsafe fn hook_pattern_attach(&mut self, method_info: PatternMethodHookInfo, routine: JmpBackRoutine) -> Result<()>{
+        let web_request_utils_make_initial_url = util::pattern_scan_il2cpp(self.assembly_name, method_info.pattern);
+        match web_request_utils_make_initial_url {
+            Some(addr) => {
+                println!("[pattern]  {}: {:x}", method_info.name, addr as usize);
+                self.interceptor.attach(
+                    addr as usize,
+                    routine,
+                )?;
+                Ok(())
+            }
+            None => {
+                println!("[pattern]  Failed to find {}", method_info.name);
+                bail!("Failed to find method")
+            }
+        }
+    }
+
+    pub unsafe fn hook_pattern_replace(&mut self, method_info: PatternMethodHookInfo, routine: RetnRoutine) -> Result<()>{
+        let web_request_utils_make_initial_url = util::pattern_scan_il2cpp(self.assembly_name, method_info.pattern);
+        match web_request_utils_make_initial_url {
+            Some(addr) => {
+                println!("[pattern]  {}: {:x}", method_info.name, addr as usize);
+                self.interceptor.replace(
+                    addr as usize,
+                    routine,
+                )?;
+                Ok(())
+            }
+            None => {
+                println!("[pattern]  Failed to find {}", method_info.name);
+                bail!("Failed to find method")
+            }
         }
     }
 }

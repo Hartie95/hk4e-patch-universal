@@ -1,6 +1,6 @@
-use crate::{il2cpp, marshal};
+use crate::{marshal};
 
-use super::{MhyContext, MhyModule, ModuleType};
+use super::{Il2cppMethodHookInfo, MhyContext, MhyModule, ModuleType, PatternMethodHookInfo};
 use anyhow::Result;
 use ilhook::x64::Registers;
 use lazy_static::lazy_static;
@@ -12,7 +12,9 @@ use crate::il2cpp::Il2CppApi;
 use crate::util;
 use crate::version::GameVersion;
 
-//const MHYRSA_PERFORM_CRYPTO_ACTION: &str = "E8 ?? ?? ?? ?? 66 C7 06 30 82";
+// todo struct for version specific il2cpp/patterns, so that version checks can be reduced
+// todo clean up
+const MHYRSA_PERFORM_CRYPTO_ACTION: &str = "E8 ?? ?? ?? ?? 66 C7 06 30 82";
 
 //const SDK_UTIL_RSA_ENCRYPT: &str = "48 89 5C 24 08 48 89 74 24 10 57 48 83 EC 20 48 8B F9 48 8B F2 48 8B 0D ? ? ? ? E8 ";
 //SDKUtil.RSAEncrypt
@@ -50,7 +52,192 @@ const SECURITY_GET_PUBLIC_RSA_KEY: &str = "48 8B 05 A1 ?? ?? ?? C3 CC CC CC CC C
 // 48 8B 05 A1 ?? ?? ?? C3 CC CC CC CC CC CC CC CC 40 53 48 83 EC 20 48 8B D9 48 8B 0D A0 ?? ?? ?? 83 B9 E0 00 00 00 00 75 05 E8 ?? ?? ?? ?? 48 8B 05 8B ?? ?? ?? 48 8B 90 B8 00 00 00 48 8B 4A 28 48 85 C9 0F 85 A5 00 00 00 48 8B 05 60 ?? ?? ?? 48 8B 80 B8 00 00 00 48 8B 48 10 48 85 C9 75 1D
 
 //const SDK_UTIL_RSA_ENCRYPT: &str = "48 89 5C 24 08 48 89 74 24 10 57 48 83 EC 20 48 8B F9 48 8B F2 48 8B 0D 24 59 31 04 E8 3F D7 09 FB 33 D2 48 8B C8 48 8B D8 E8 B2 9E 76 FF 48 85 DB 0F 84 82 00 00 00 4C 8B 0B 48 8B D7 48 8B CB 4D 8B 81 B8 01 00 00 41 FF 91 B0 01 00 00 33 C9";
+
+const SDK_UTIL_RSA_ENCRYPT_32: &str = "48 89 5C 24 08 48 89 74 24 10 57 48 83 EC 20 48 8B F9 48 8B F2 48 8B 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8B C8 48 8B D8 E8 ?? ?? ?? ?? 48 85 DB 74 7B";
+const SECURITY_GET_PUBLIC_RSA_KEY_32: &str = "48 8B 05 A1 ?? ?? ?? C3 CC CC CC CC CC CC CC CC 40 53 48 83 EC 20 48 8B D9 48 8B 0D A0 ?? ?? ?? 83 B9 E0 00 00 00 00 75 05 E8 ?? ?? ?? ?? 48 8B 05 8B ?? ?? ?? 48 8B 90 B8 00 00 00 48 8B 4A 28 48 85 C9 0F 85 A5 00 00 00 48 8B 05 60 ?? ?? ?? 48 8B 80 B8 00 00 00 48 8B 48 10 48 85 C9 75 1D";
+
+                                     //48 BA 45 78 70 6F 6E 65 6E 74 48 89 90 ? ? ? ? 48 BA 3E 3C 2F 52 53 41 4B 65
+const MHYRSA_PERFORM_CRYPTO_ACTION_50: &str = "E8 ?? ?? ?? ?? 66 C7 06 30 82";
+const KEY_SIGN_CHECK_50: &str = "89 DA ?? ?? ?? ?? ?? ?? E8 ?? ?? ?? ?? 89 C3 48 8B 4C 24 ?? 48 31 E1 E8 ?? ?? ?? ?? 89 D8 48 83 C4 ??";
+const KEY_SIGN_CHECK_OFFSET_50: usize = 0x22;
+const SDK_UTIL_RSA_ENCRYPT_50: &str = "41 57 41 56 41 55 41 54 56 57 55 53 48 83 EC ?? 49 89 D6 48 89 CE 48 8B 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 49 89 C5";
+
+
+const MHYRSA_PERFORM_CRYPTO_ACTION_65: &str = "E8 ?? ?? ?? ?? 48 83 C4 20 66 41 C7 06 30 82";
+const KEY_SIGN_CHECK_65: &str = "E8 ?? ?? ?? ?? 48 83 C4 30 84 C0 74 ?? 41 8B 04 24";
+const KEY_SIGN_CHECK_OFFSET_65: usize = 0x5;
+
+
 const KEY_SIZE: usize = 268;
+
+
+impl Il2cppMethodHookInfo {
+    // SDKUtil.RSAEncrypt
+    pub const SDK_UTIL_RSA_ENCRYPT: Self = Self {
+        name: "SDK_UTIL_RSA_ENCRYPT",
+        assembly_name: "MiHoYoSDK.dll",
+        namespace: "MiHoYo.SDK",
+        class_name: "SDKUtil",
+        method_name: "RSAEncrypt",
+        argument_count: 2,
+    };
+
+
+    // MiHoYoSDKUtil.RSAEncrypt
+    pub const MIHOYO_SDK_UTIL_RSA_ENCRYPT: Self = Self {
+        name: "MIHOYO_SDK_UTIL_RSA_ENCRYPT",
+        assembly_name: "Assembly-CSharp-firstpass.dll",
+        namespace: "MiHoYo.SDK",
+        class_name: "MiHoYoSDKUtil",
+        method_name: "RSAEncrypt",
+        argument_count: 2,
+    };
+
+
+    // RSAUtil.RSAEncrypt
+    pub const RSA_UTIL_RSA_ENCRYPT_28: Self = Self {
+        name: "RSA_UTIL_RSA_ENCRYPT_28",
+        assembly_name: "Assembly-CSharp.dll",
+        namespace: "",
+        class_name: "HIGDKPFEPDM",
+        method_name: "ADOFHHIHDEK",
+        argument_count: 2,
+    };
+    pub const RSA_UTIL_RSA_ENCRYPT_30: Self = Self {
+        name: "RSA_UTIL_RSA_ENCRYPT_30",
+        assembly_name: "Assembly-CSharp.dll",
+        namespace: "",
+        class_name: "CFHNOJNNPJM",
+        method_name: "COHLKBFJAHK",
+        argument_count: 2,
+    };
+    pub const RSA_UTIL_RSA_ENCRYPT_31: Self = Self {
+        name: "RSA_UTIL_RSA_ENCRYPT_31",
+        assembly_name: "Assembly-CSharp.dll",
+        namespace: "",
+        class_name: "PKFIJILJAND",
+        method_name: "CDBOCMBCNJC",
+        argument_count: 2,
+    };
+
+
+    // RSAUtil.RSAVerifyHash
+    pub const RSA_UTIL_VERIFY_HASH_28: Self = Self {
+        name: "RSA_UTIL_VERIFY_HASH_28",
+        assembly_name: "Assembly-CSharp.dll",
+        namespace: "",
+        class_name: "HIGDKPFEPDM",
+        method_name: "NINPDCGNGHO",
+        argument_count: 3,
+    };
+
+    pub const RSA_UTIL_VERIFY_HASH_30: Self = Self {
+        name: "RSA_UTIL_VERIFY_HASH_28",
+        assembly_name: "Assembly-CSharp.dll",
+        namespace: "",
+        class_name: "HIGDKPFEPDM",
+        method_name: "KMPGECCPAJM",
+        argument_count: 3,
+    };
+
+    pub const RSA_UTIL_VERIFY_HASH_31: Self = Self {
+        name: "RSA_UTIL_VERIFY_HASH_28",
+        assembly_name: "Assembly-CSharp.dll",
+        namespace: "",
+        class_name: "HIGDKPFEPDM",
+        method_name: "PDLKKENNJLM",
+        argument_count: 3,
+    };
+
+
+    // RSAUtil.RSAVerifyData
+    pub const RSA_UTIL_VERIFY_DATA_28: Self = Self {
+        name: "RSA_UTIL_VERIFY_DATA_28",
+        assembly_name: "Assembly-CSharp.dll",
+        namespace: "",
+        class_name: "HIGDKPFEPDM",
+        method_name: "CAGCMDCHJAO",
+        argument_count: 3,
+    };
+    pub const RSA_UTIL_VERIFY_DATA_30: Self = Self {
+        name: "RSA_UTIL_VERIFY_DATA_28",
+        assembly_name: "Assembly-CSharp.dll",
+        namespace: "",
+        class_name: "HIGDKPFEPDM",
+        method_name: "HBMMACNNAIB",
+        argument_count: 3,
+    };
+    pub const RSA_UTIL_VERIFY_DATA_31: Self = Self {
+        name: "RSA_UTIL_VERIFY_DATA_28",
+        assembly_name: "Assembly-CSharp.dll",
+        namespace: "",
+        class_name: "HIGDKPFEPDM",
+        method_name: "GODDCNANDHK",
+        argument_count: 3,
+    };
+
+
+    // MoleMoleSecurity.get_publicRSAKey
+    pub const SECURITY_GET_PUBLIC_KEY_28: Self = Self {
+        name: "SECURITY_GET_PUBLIC_KEY_28",
+        assembly_name: "Assembly-CSharp.dll",
+        namespace: "",
+        class_name: "HGMCNHFMMON",
+        method_name: "GGIHJMBMMNI",
+        argument_count: 0,
+    };
+    pub const SECURITY_GET_PUBLIC_KEY_30: Self = Self {
+        name: "SECURITY_GET_PUBLIC_KEY_28",
+        assembly_name: "Assembly-CSharp.dll",
+        namespace: "",
+        class_name: "LNLLCGKMMMB",
+        method_name: "FIMLGACKHNC",
+        argument_count: 0,
+    };
+    pub const SECURITY_GET_PUBLIC_KEY_31: Self = Self {
+        name: "SECURITY_GET_PUBLIC_KEY_28",
+        assembly_name: "Assembly-CSharp.dll",
+        namespace: "",
+        class_name: "FCHAFLOIDCC",
+        method_name: "CPIIJALEPEJ",
+        argument_count: 0,
+    };
+}
+
+impl PatternMethodHookInfo {
+    // 50+ offsets
+    pub const MHYRSA_PERFORM_CRYPTO_ACTION_50: Self = Self {
+        name: "MHYRSA_PERFORM_CRYPTO_ACTION_50",
+        pattern: MHYRSA_PERFORM_CRYPTO_ACTION_50,
+        offset: 0,
+    };
+
+    pub const KEY_SIGN_CHECK_50: Self = Self {
+        name: "KEY_SIGN_CHECK_50",
+        pattern: KEY_SIGN_CHECK_50,
+        offset: KEY_SIGN_CHECK_OFFSET_50,
+    };
+
+    pub const SDK_UTIL_RSA_ENCRYPT_50: Self = Self {
+        name: "SDK_UTIL_RSA_ENCRYPT_50",
+        pattern: SDK_UTIL_RSA_ENCRYPT_50,
+        offset: 0,
+    };
+
+    // 60+ offsets
+    pub const MHYRSA_PERFORM_CRYPTO_ACTION_65: Self = Self {
+        name: "MHYRSA_PERFORM_CRYPTO_ACTION_65",
+        pattern: MHYRSA_PERFORM_CRYPTO_ACTION_65,
+        offset: 0,
+    };
+
+    pub const KEY_SIGN_CHECK_65: Self = Self {
+        name: "KEY_SIGN_CHECK_65",
+        pattern: KEY_SIGN_CHECK_65,
+        offset: KEY_SIGN_CHECK_OFFSET_65,
+    };
+}
+
 
 lazy_static! {
     pub static ref PUBLIC_SIGNING_DER_KEY: Vec<u8> = {
@@ -90,8 +277,6 @@ lazy_static! {
 }
 
 pub struct Security;
-// todo split sdk and dispatch/game patching
-// todo limit dispatch/game patching by version, don't patch before 2.7.50
 impl MhyModule for MhyContext<Security> {
     unsafe fn init(&mut self, version: GameVersion, il2cpp_api: Option<&Il2CppApi>) -> Result<()> {
         match il2cpp_api {
@@ -116,45 +301,8 @@ impl MhyModule for MhyContext<Security> {
 impl MhyContext<Security> {
     unsafe fn via_il2cpp(&mut self, version: GameVersion, il2cpp_api: &Il2CppApi) -> Result<()> {
         // SDK:
-        let sdk_util_rsa_encrypt = il2cpp::find_method_pointer(
-            il2cpp_api,
-            "MiHoYoSDK.dll",
-            "MiHoYo.SDK",
-            "SDKUtil",
-            "RSAEncrypt",
-            2,
-        );
-        if let Some(addr) = sdk_util_rsa_encrypt {
-            println!("[il2cpp]  sdk_util_rsa_encrypt: {:x}", addr as usize);
-            self.interceptor.attach(
-                addr as usize,
-                on_sdk_util_rsa_encrypt,
-            )?;
-        }
-        else
-        {
-            println!("[il2cpp]  Failed to find sdk_util_rsa_encrypt");
-        }
-
-        let mihoyosdk_util_rsa_encrypt =  il2cpp::find_method_pointer(
-            il2cpp_api,
-            "Assembly-CSharp-firstpass.dll",
-            "MiHoYo.SDK",
-            "MiHoYoSDKUtil",
-            "RSAEncrypt",
-            2,
-        );
-        if let Some(addr) = mihoyosdk_util_rsa_encrypt {
-            println!("[il2cpp]  mihoyosdk_util_rsa_encrypt: {:x}", addr as usize);
-            self.interceptor.attach(
-                addr as usize,
-                on_sdk_util_rsa_encrypt,
-            )?;
-        }
-        else
-        {
-            println!("[il2cpp]  Failed to find mihoyosdk_util_rsa_encrypt");
-        }
+        let _ = self.hook_il2cpp_attach(il2cpp_api, Il2cppMethodHookInfo::SDK_UTIL_RSA_ENCRYPT, on_sdk_util_rsa_encrypt);
+        let _ = self.hook_il2cpp_attach(il2cpp_api, Il2cppMethodHookInfo::MIHOYO_SDK_UTIL_RSA_ENCRYPT, on_sdk_util_rsa_encrypt);
 
         // extra encryption and signatures got only added in 2.8
         if version.is_before(2,7,50) {
@@ -162,184 +310,66 @@ impl MhyContext<Security> {
         }
 
         // Dispatch/kcp:
+        let rsa_util_rsa_encrypt_target = if version.is_at_least(2,7,50) && version.is_before(2,8,50){
+            Il2cppMethodHookInfo::RSA_UTIL_RSA_ENCRYPT_28
+        } else if version.is_at_least(2,7,50) && version.is_before(3,0,50){
+            Il2cppMethodHookInfo::RSA_UTIL_RSA_ENCRYPT_30
+        } else {
+            Il2cppMethodHookInfo::RSA_UTIL_RSA_ENCRYPT_31
+        };
 
-        let rsa_util_encrypt =  il2cpp::find_method_pointer(
-            il2cpp_api,
-            "Assembly-CSharp.dll",
-            "",
-            "HIGDKPFEPDM",
-            "ADOFHHIHDEK", // RSAEncrypt on 2.8
-            2,
-        );
-        if let Some(addr) = rsa_util_encrypt {
-            println!("[il2cpp]  RSAEncrypt: {:x}", addr as usize);
-            self.interceptor.attach(
-                addr as usize,
-                on_rsa_util_rsa_encrypt,
-            )?;
-        }
-        else
-        {
-            println!("[il2cpp]  Failed to find RSAEncrypt");
-        }
+        let _ = self.hook_il2cpp_attach(il2cpp_api, rsa_util_rsa_encrypt_target, on_rsa_util_rsa_encrypt);
 
-        let rsa_util_encrypt =  il2cpp::find_method_pointer(
-            il2cpp_api,
-            "Assembly-CSharp.dll",
-            "",
-            "HIGDKPFEPDM",
-            "NINPDCGNGHO", // RSAVerifyHash on 2.8
-            3,
-        );
-        if let Some(addr) = rsa_util_encrypt {
-            println!("[il2cpp]  RSAVerifyHash: {:x}", addr as usize);
-            self.interceptor.replace(
-                addr as usize,
-                verify_sucessfull,
-            )?;
-        }
-        else
-        {
-            println!("[il2cpp]  Failed to find RSAVerifyHash");
-        }
+        let rsa_util_verify_hash_target = if version.is_at_least(2,7,50) && version.is_before(2,8,50){
+            Il2cppMethodHookInfo::RSA_UTIL_VERIFY_HASH_28
+        } else if version.is_at_least(2,7,50) && version.is_before(3,0,50){
+            Il2cppMethodHookInfo::RSA_UTIL_VERIFY_HASH_30
+        } else {
+            Il2cppMethodHookInfo::RSA_UTIL_VERIFY_HASH_31
+        };
 
-        let rsa_util_encrypt =  il2cpp::find_method_pointer(
-            il2cpp_api,
-            "Assembly-CSharp.dll",
-            "",
-            "HIGDKPFEPDM",
-            "CAGCMDCHJAO", // RSAVerifyData on 2.8
-            3,
-        );
-        if let Some(addr) = rsa_util_encrypt {
-            println!("[il2cpp]  RSAVerifyData: {:x}", addr as usize);
-            self.interceptor.replace(
-                addr as usize,
-                verify_sucessfull,
-            )?;
-        }
-        else
-        {
-            println!("[il2cpp]  Failed to find RSAVerifyData");
-        }
+        let _ = self.hook_il2cpp_replace(il2cpp_api, rsa_util_verify_hash_target, verify_sucessfull);
+
+        let rsa_util_verify_data_target = if version.is_at_least(2,7,50) && version.is_before(2,8,50){
+            Il2cppMethodHookInfo::RSA_UTIL_VERIFY_DATA_28
+        } else if version.is_at_least(2,7,50) && version.is_before(3,0,50){
+            Il2cppMethodHookInfo::RSA_UTIL_VERIFY_DATA_30
+        } else {
+            Il2cppMethodHookInfo::RSA_UTIL_VERIFY_DATA_31
+        };
+
+        let _ = self.hook_il2cpp_replace(il2cpp_api, rsa_util_verify_data_target, verify_sucessfull);
 
 
-        let rsa_util_encrypt =  il2cpp::find_method_pointer(
-            il2cpp_api,
-            "Assembly-CSharp.dll",
-            "",
-            "HGMCNHFMMON",
-            "GGIHJMBMMNI", // get_publicRSAKey on 2.8
-            0,
-        );
-        if let Some(addr) = rsa_util_encrypt {
-            println!("[il2cpp]  get_publicRSAKey: {:x}", addr as usize);
-            self.interceptor.replace(
-                addr as usize,
-                on_security_get_public_rsa_key,
-            )?;
-        }
-        else
-        {
-            println!("[il2cpp]  Failed to find get_publicRSAKey");
-        }
+        let security_get_public_rsa_key_target = if version.is_at_least(2,7,50) && version.is_before(2,8,50){
+            Il2cppMethodHookInfo::SECURITY_GET_PUBLIC_KEY_28
+        } else if version.is_at_least(2,7,50) && version.is_before(3,0,50){
+            Il2cppMethodHookInfo::SECURITY_GET_PUBLIC_KEY_30
+        } else {
+            Il2cppMethodHookInfo::SECURITY_GET_PUBLIC_KEY_31
+        };
+
+        let _ = self.hook_il2cpp_replace(il2cpp_api, security_get_public_rsa_key_target, on_security_get_public_rsa_key);
+
 
         Ok(())
     }
     unsafe fn via_pattern(&mut self, version: GameVersion) -> Result<()> {
-        // SDK:
-        let sdk_util_rsa_encrypt = util::pattern_scan_il2cpp(self.assembly_name, SDK_UTIL_RSA_ENCRYPT);
-        if let Some(addr) = sdk_util_rsa_encrypt {
-            println!("[pattern] sdk_util_rsa_encrypt: {:x}", addr as usize);
-            self.interceptor.attach(
-                addr as usize,
-                on_sdk_util_rsa_encrypt,
-            )?;
+        // todo verify which versions those offsets support
+        if version.is_at_least(6,4,50) {
+            let _ = self.hook_pattern_attach(PatternMethodHookInfo::MHYRSA_PERFORM_CRYPTO_ACTION_65, on_mhy_rsa);
+            let _ = self.hook_pattern_attach(PatternMethodHookInfo::KEY_SIGN_CHECK_65, after_key_sign_check);
+            let _ = self.hook_pattern_attach(PatternMethodHookInfo::SDK_UTIL_RSA_ENCRYPT_50, on_sdk_util_rsa_encrypt);
+            return Ok(())
         }
-        else
-        {
-            println!("[pattern] Failed to find sdk_util_rsa_encrypt");
-        }
-
-        let mihoyosdk_util_rsa_encrypt = util::pattern_scan_il2cpp(self.assembly_name, MIHOYO_SDK_UTIL_RSA_ENCRYPT);
-        if let Some(addr) = mihoyosdk_util_rsa_encrypt {
-            println!("[pattern] mihoyosdk_util_rsa_encrypt: {:x}", addr as usize);
-            self.interceptor.attach(
-                addr as usize,
-                on_sdk_util_rsa_encrypt,
-            )?;
-        }
-        else
-        {
-            println!("[pattern] Failed to find mihoyosdk_util_rsa_encrypt");
+        if version.is_at_least(4, 7, 50) {
+            let _ = self.hook_pattern_attach(PatternMethodHookInfo::MHYRSA_PERFORM_CRYPTO_ACTION_50, on_mhy_rsa);
+            let _ = self.hook_pattern_attach(PatternMethodHookInfo::KEY_SIGN_CHECK_50, after_key_sign_check);
+            let _ = self.hook_pattern_attach(PatternMethodHookInfo::SDK_UTIL_RSA_ENCRYPT_50, on_sdk_util_rsa_encrypt);
+            return Ok(())
         }
 
-        // Dispatch/kcp:
-        /*let mhyrsa_perform_crypto_action = util::pattern_scan_code(self.assembly_name, MHYRSA_PERFORM_CRYPTO_ACTION);
-       if let Some(addr) = mhyrsa_perform_crypto_action {
-           println!("mhyrsa_perform_crypto_action: {:x}", addr as usize);
-           self.interceptor.attach(
-               addr as usize,
-               on_mhy_rsa,
-           )?;
-       }
-       else
-       {
-           println!("Failed to find mhyrsa_perform_crypto_action");
-       }*/
-
-        let rsa_util_encrypt = util::pattern_scan_il2cpp(self.assembly_name, RSA_UTIL_RSA_ENCRYPT);
-        if let Some(addr) = rsa_util_encrypt {
-            println!("[pattern] rsa_util_encrypt: {:x}", addr as usize);
-            self.interceptor.attach(
-                addr as usize,
-                on_rsa_util_rsa_encrypt,
-            )?;
-        }
-        else
-        {
-            println!("[pattern] Failed to find rsa_util_encrypt");
-        }
-
-        let key_sign_check = util::pattern_scan_code(self.assembly_name, KEY_SIGN_CHECK);
-        if let Some(addr) = key_sign_check {
-            let addr_offset = addr as usize + KEY_SIGN_CHECK_OFFSET;
-            println!("[pattern] key_sign_check: {:x}", addr_offset as usize);
-            self.interceptor.replace(
-                addr_offset as usize,
-                verify_sucessfull,
-            )?;
-        }
-        else
-        {
-            println!("[pattern] Failed to find key_sign_check");
-        }
-
-        let rsautil_verify_data = util::pattern_scan_code(self.assembly_name, VERIFY_DATA);
-        if let Some(addr) = rsautil_verify_data {
-            let addr_offset = addr as usize ;
-            println!("key_sign_check: {:x}", addr_offset as usize);
-            self.interceptor.replace(
-                addr_offset as usize,
-                verify_sucessfull,
-            )?;
-        }
-        else
-        {
-            println!("[pattern] Failed to find key_sign_check");
-        }
-        let security_get_public_rsa_key = util::pattern_scan_il2cpp(self.assembly_name, SECURITY_GET_PUBLIC_RSA_KEY);
-        if let Some(addr) = security_get_public_rsa_key {
-            println!("[pattern] security_get_public_rsa_key: {:x}", addr as usize);
-            self.interceptor.replace(
-                addr as usize,
-                on_security_get_public_rsa_key,
-            )?;
-        }
-        else
-        {
-            println!("[pattern] Failed to find sdk_util_rsa_encrypt");
-        }
+        println!("not yet supported version {}", version);
 
         Ok(())
     }

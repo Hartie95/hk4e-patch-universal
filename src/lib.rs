@@ -42,7 +42,7 @@ const LOG_LEVEL: tracing::Level = tracing::Level::INFO;
 unsafe fn init_console(){
     match Console::AllocConsole() {
         Err(error) => println!("Failed to initialize console: {}", error),
-        value => return
+        _ => return
     }
 }
 
@@ -144,12 +144,6 @@ unsafe fn thread_func(region: REGION, version: GameVersion) {
 
 
     println!("Initializing modules...");
-    if version.is_at_least(5, 8, 50) {
-        if let Err(e) = module_manager.enable(MhyContext::<HoYoPass>::new(&exe_name), version, None){
-            println!("Error initializing hoyopass, if on 6.0+ this causes login problems: {}", e)
-        };
-    }
-
 
     let mut il2cpp_api: Option<Il2CppApi> = None;
     if version.has_ua() {
@@ -168,11 +162,18 @@ unsafe fn thread_func(region: REGION, version: GameVersion) {
 
     let assembly_name = if version.has_ua() {UA_DLL_NAME} else {exe_name};
 
+    marshal::find(il2cpp_api.as_ref(), version);
+
     let _ = module_manager.enable(MhyContext::<Security>::new(assembly_name), version, il2cpp_api.as_ref());
 
-    marshal::find(il2cpp_api.as_ref());
-
     if PATCHER_CONFIG.get().unwrap().use_redirects {
+        // hoyopass redirects
+        if version.is_at_least(5, 8, 50) {
+            if let Err(e) = module_manager.enable(MhyContext::<HoYoPass>::new(&exe_name), version, None){
+                println!("Error initializing hoyopass, if on 6.0+ this causes login problems: {}", e)
+            };
+        }
+        // dispatch and sdk
         if let Err(e) = module_manager.enable(MhyContext::<Http>::new(assembly_name), version, il2cpp_api.as_ref()){
             println!("Error initializing https module, automatic redirects will not work, use a proxy instead: {}", e)
         };

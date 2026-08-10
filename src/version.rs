@@ -13,6 +13,7 @@ const LAYOUT_MARKER_OFFSET: u64 = 0x11D0;
 const OLD_VERSION_OFFSET: u64 = 0x11F4;
 const OLD_VERSION_CN_OFFSET: u64 = 0x11EC;
 const NEW_VERSION_OFFSET: u64 = 0x1218;
+const NEW_VERSION_CN_OFFSET: u64 = 0x1220;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct GameVersion {
@@ -190,7 +191,11 @@ pub fn read_game_version(region: REGION) -> io::Result<GameVersion> {
             }
         },
         // TODO get cn value for newer versions
-        3 => NEW_VERSION_OFFSET,
+        3 =>  match region {
+            OS => NEW_VERSION_OFFSET,
+            CN => NEW_VERSION_CN_OFFSET,
+            _ => unreachable!(),
+        },
         value => {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
